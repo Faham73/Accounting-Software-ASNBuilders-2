@@ -18,8 +18,8 @@ interface Project {
 interface VoucherLine {
   accountId: string;
   description: string;
-  debit: number;
-  credit: number;
+  debit: string | number; // Allow string for UI state (empty while typing)
+  credit: string | number; // Allow string for UI state (empty while typing)
   projectId: string;
 }
 
@@ -37,8 +37,8 @@ export default function CreateVoucherForm() {
   });
 
   const [lines, setLines] = useState<VoucherLine[]>([
-    { accountId: '', description: '', debit: 0, credit: 0, projectId: '' },
-    { accountId: '', description: '', debit: 0, credit: 0, projectId: '' },
+    { accountId: '', description: '', debit: '', credit: '', projectId: '' },
+    { accountId: '', description: '', debit: '', credit: '', projectId: '' },
   ]);
 
   useEffect(() => {
@@ -62,7 +62,7 @@ export default function CreateVoucherForm() {
   }, []);
 
   const addLine = () => {
-    setLines([...lines, { accountId: '', description: '', debit: 0, credit: 0, projectId: '' }]);
+    setLines([...lines, { accountId: '', description: '', debit: '', credit: '', projectId: '' }]);
   };
 
   const removeLine = (index: number) => {
@@ -72,14 +72,22 @@ export default function CreateVoucherForm() {
   };
 
   const updateLine = (index: number, field: keyof VoucherLine, value: any) => {
-    const newLines = [...lines];
-    newLines[index] = { ...newLines[index], [field]: value };
-    setLines(newLines);
+    setLines((prevLines) => {
+      const newLines = [...prevLines];
+      newLines[index] = { ...newLines[index], [field]: value };
+      return newLines;
+    });
   };
 
   const calculateTotals = () => {
-    const totalDebit = lines.reduce((sum, line) => sum + (line.debit || 0), 0);
-    const totalCredit = lines.reduce((sum, line) => sum + (line.credit || 0), 0);
+    const totalDebit = lines.reduce((sum, line) => {
+      const debit = typeof line.debit === 'string' ? parseFloat(line.debit) || 0 : line.debit || 0;
+      return sum + debit;
+    }, 0);
+    const totalCredit = lines.reduce((sum, line) => {
+      const credit = typeof line.credit === 'string' ? parseFloat(line.credit) || 0 : line.credit || 0;
+      return sum + credit;
+    }, 0);
     return { totalDebit, totalCredit, difference: totalDebit - totalCredit };
   };
 
@@ -100,7 +108,11 @@ export default function CreateVoucherForm() {
     }
 
     // Validate each line has either debit or credit
-    if (lines.some((line) => line.debit === 0 && line.credit === 0)) {
+    if (lines.some((line) => {
+      const debit = typeof line.debit === 'string' ? parseFloat(line.debit) || 0 : line.debit || 0;
+      const credit = typeof line.credit === 'string' ? parseFloat(line.credit) || 0 : line.credit || 0;
+      return debit === 0 && credit === 0;
+    })) {
       setError('Each line must have either debit or credit amount');
       return;
     }
@@ -115,8 +127,8 @@ export default function CreateVoucherForm() {
         lines: lines.map((line) => ({
           accountId: line.accountId,
           description: line.description || null,
-          debit: line.debit || 0,
-          credit: line.credit || 0,
+          debit: typeof line.debit === 'string' ? parseFloat(line.debit) || 0 : line.debit || 0,
+          credit: typeof line.credit === 'string' ? parseFloat(line.credit) || 0 : line.credit || 0,
           projectId: line.projectId || null,
         })),
       };
@@ -275,11 +287,14 @@ export default function CreateVoucherForm() {
                       type="number"
                       step="0.01"
                       min="0"
-                      value={line.debit || ''}
+                      value={typeof line.debit === 'string' ? line.debit : (line.debit === 0 ? '' : String(line.debit))}
                       onChange={(e) => {
-                        const value = parseFloat(e.target.value) || 0;
-                        updateLine(index, 'debit', value);
-                        if (value > 0) updateLine(index, 'credit', 0);
+                        const value = e.target.value;
+                        updateLine(index, 'debit', value === '' ? '' : value);
+                        // Clear credit if debit is being entered
+                        if (value !== '' && parseFloat(value) > 0) {
+                          updateLine(index, 'credit', '');
+                        }
                       }}
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm text-right"
                     />
@@ -289,11 +304,14 @@ export default function CreateVoucherForm() {
                       type="number"
                       step="0.01"
                       min="0"
-                      value={line.credit || ''}
+                      value={typeof line.credit === 'string' ? line.credit : (line.credit === 0 ? '' : String(line.credit))}
                       onChange={(e) => {
-                        const value = parseFloat(e.target.value) || 0;
-                        updateLine(index, 'credit', value);
-                        if (value > 0) updateLine(index, 'debit', 0);
+                        const value = e.target.value;
+                        updateLine(index, 'credit', value === '' ? '' : value);
+                        // Clear debit if credit is being entered
+                        if (value !== '' && parseFloat(value) > 0) {
+                          updateLine(index, 'debit', '');
+                        }
                       }}
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm text-right"
                     />

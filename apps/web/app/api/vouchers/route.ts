@@ -30,6 +30,10 @@ export async function GET(request: NextRequest) {
       limit: searchParams.get('limit') || '20',
     });
 
+    // Ensure page and limit are numbers (schema should handle this, but be explicit)
+    const page = Number(filters.page) || 1;
+    const limit = Number(filters.limit) || 20;
+
     const where: any = {
       companyId: auth.companyId,
     };
@@ -59,8 +63,8 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const skip = (filters.page - 1) * filters.limit;
-    const take = filters.limit;
+    const skip = (page - 1) * limit;
+    const take = limit;
 
     const [vouchers, total] = await Promise.all([
       prisma.voucher.findMany({
@@ -94,10 +98,10 @@ export async function GET(request: NextRequest) {
       ok: true,
       data: vouchers,
       pagination: {
-        page: filters.page,
-        limit: filters.limit,
+        page,
+        limit,
         total,
-        totalPages: Math.ceil(total / filters.limit),
+        totalPages: Math.ceil(total / limit),
       },
     });
   } catch (error) {

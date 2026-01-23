@@ -224,7 +224,7 @@ model Voucher {
   id              String        @id @default(cuid())
   companyId       String        @map("company_id")
   projectId       String?       @map("project_id")
-  voucherNo       String
+  voucherNo       String        @map("voucher_no")
   date            DateTime
   status          VoucherStatus @default(DRAFT)
   narration       String?
