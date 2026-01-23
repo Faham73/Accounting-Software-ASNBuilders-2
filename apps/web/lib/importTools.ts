@@ -59,7 +59,7 @@ export interface ValidationResult {
   vouchers: VoucherGroup[];
   totalRows: number;
   totalVouchers: number;
-  errors: Array<{ voucherKey: string; message: string }>;
+  errors: Array<{ voucherKey: string; message: string; severity?: 'blocking' | 'warning' }>;
   warnings: Array<{ voucherKey: string; message: string }>;
   unresolvedAccounts: Array<{ accountCode?: string; accountName?: string; rowIndex: number }>;
 }
@@ -524,8 +524,12 @@ export async function parseAndValidateVouchers(
       parsedLineCount,
     });
 
-    // Collect errors and warnings
-    voucherErrors.forEach((err) => errors.push({ voucherKey, message: err }));
+    // Collect errors and warnings with severity
+    voucherErrors.forEach((err) => {
+      // Determine severity: account not found is warning-level, others are blocking
+      const severity = err.includes('Account not found') ? 'warning' : 'blocking';
+      errors.push({ voucherKey, message: err, severity });
+    });
     voucherWarnings.forEach((warn) => warnings.push({ voucherKey, message: warn }));
   }
 

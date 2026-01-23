@@ -38,10 +38,11 @@ export async function POST(request: NextRequest) {
       if (!v.errors || v.errors.length === 0) return false;
       // Check for blocking errors (not just warnings)
       return v.errors.some((err) => {
-        // If auto-create is enabled, skip "Account not found" errors
+        // If auto-create is enabled, skip "Account not found" errors (they become warnings)
         if (autoCreateAccounts && err.includes('Account not found')) {
           return false;
         }
+        // Blocking errors: invalid date, unbalanced, < 2 lines, both debit/credit > 0
         return (
           err.includes('Invalid date') ||
           err.includes('not balanced') ||

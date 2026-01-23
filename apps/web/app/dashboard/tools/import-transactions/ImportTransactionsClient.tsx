@@ -54,7 +54,7 @@ interface ParseResult {
   totalRows: number;
   totalVouchers: number;
   vouchers: VoucherPreview[];
-  errors: Array<{ voucherKey: string; message: string }>;
+  errors: Array<{ voucherKey: string; message: string; severity?: 'blocking' | 'warning' }>;
   warnings: Array<{ voucherKey: string; message: string }>;
   unresolvedAccounts: Array<{ accountCode?: string; accountName?: string; rowIndex: number }>;
   hasMore: boolean;
@@ -260,9 +260,15 @@ export default function ImportTransactionsClient() {
 
     // Check for blocking errors (excluding "Account not found" if auto-create is enabled)
     const blockingErrors = parseResult.errors.filter((err) => {
+      // If auto-create is enabled, "Account not found" is not blocking
       if (autoCreateAccounts && err.message.includes('Account not found')) {
-        return false; // Skip account not found errors if auto-create is enabled
+        return false;
       }
+      // Check severity if available
+      if (err.severity) {
+        return err.severity === 'blocking';
+      }
+      // Fallback: check message content
       return (
         err.message.includes('Invalid date') ||
         err.message.includes('not balanced') ||
@@ -360,19 +366,38 @@ export default function ImportTransactionsClient() {
   const canProceedToStep3 =
     options.dateColumn && options.accountColumn && options.debitColumn && options.creditColumn;
   
-  // Block import if there are blocking errors (unresolved accounts if auto-create disabled, unbalanced, etc.)
-  const hasBlockingErrors = parseResult && parseResult.errors.some((err) => {
-    // If auto-create is enabled, skip "Account not found" errors
-    if (autoCreateAccounts && err.message.includes('Account not found')) {
-      return false;
-    }
-    return (
-      err.message.includes('Invalid date') ||
-      err.message.includes('not balanced') ||
-      err.message.includes('must have at least 2 lines') ||
-      err.message.includes('Both debit and credit cannot be greater than 0')
-    );
-  });
+  // Separate blocking errors from warnings based on auto-create toggle
+  const blockingErrors = parseResult
+    ? parseResult.errors.filter((err) => {
+        // If auto-create is enabled, "Account not found" becomes a warning
+        if (autoCreateAccounts && err.message.includes('Account not found')) {
+          return false;
+        }
+        // Check severity if available, otherwise check message content
+        if (err.severity) {
+          return err.severity === 'blocking';
+        }
+        // Fallback: check message content for blocking errors
+        return (
+          err.message.includes('Invalid date') ||
+          err.message.includes('not balanced') ||
+          err.message.includes('must have at least 2 lines') ||
+          err.message.includes('Both debit and credit cannot be greater than 0')
+        );
+      })
+    : [];
+
+  const warnings = parseResult
+    ? [
+        ...parseResult.warnings,
+        // If auto-create is enabled, move "Account not found" errors to warnings
+        ...(autoCreateAccounts
+          ? parseResult.errors.filter((err) => err.message.includes('Account not found'))
+          : []),
+      ]
+    : [];
+
+  const hasBlockingErrors = blockingErrors.length > 0;
   const canProceedToStep4 = parseResult && !hasBlockingErrors;
 
   return (
@@ -525,40 +550,42 @@ export default function ImportTransactionsClient() {
                 <div className="text-2xl font-bold text-gray-900">{parseResult.totalVouchers}</div>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="text-sm text-gray-600">Errors</div>
-                <div className="text-2xl font-bold text-red-600">{parseResult.errors.length}</div>
+                <div className="text-sm text-gray-600">Blocking Errors</div>
+                <div className="text-2xl font-bold text-red-600">{blockingErrors.length}</div>
               </div>
             </div>
 
-            {parseResult.errors.length > 0 && (
+            {blockingErrors.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-red-800 mb-2">
                   Blocking Errors (Must Fix Before Import)
                 </h3>
                 <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
-                  {parseResult.errors.slice(0, 20).map((err, idx) => (
+                  {blockingErrors.slice(0, 20).map((err, idx) => (
                     <li key={idx}>
                       <strong>{err.voucherKey}:</strong> {err.message}
                     </li>
                   ))}
-                  {parseResult.errors.length > 20 && (
-                    <li>... and {parseResult.errors.length - 20} more errors</li>
+                  {blockingErrors.length > 20 && (
+                    <li>... and {blockingErrors.length - 20} more errors</li>
                   )}
                 </ul>
               </div>
             )}
 
-            {parseResult.warnings.length > 0 && (
+            {warnings.length > 0 && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-yellow-800 mb-2">Warnings</h3>
+                <h3 className="text-sm font-semibold text-yellow-800 mb-2">
+                  Warnings {autoCreateAccounts && '(Will be handled during import)'}
+                </h3>
                 <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1">
-                  {parseResult.warnings.slice(0, 10).map((warn, idx) => (
+                  {warnings.slice(0, 10).map((warn, idx) => (
                     <li key={idx}>
                       <strong>{warn.voucherKey}:</strong> {warn.message}
                     </li>
                   ))}
-                  {parseResult.warnings.length > 10 && (
-                    <li>... and {parseResult.warnings.length - 10} more warnings</li>
+                  {warnings.length > 10 && (
+                    <li>... and {warnings.length - 10} more warnings</li>
                   )}
                 </ul>
               </div>
@@ -568,11 +595,13 @@ export default function ImportTransactionsClient() {
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-yellow-800 mb-2">
                   Unresolved Accounts ({parseResult.unresolvedAccounts.length})
+                  {autoCreateAccounts && ' - Will be created during import'}
                 </h3>
                 <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1 mb-4">
                   {parseResult.unresolvedAccounts.slice(0, 10).map((acc, idx) => (
                     <li key={idx}>
                       {acc.accountCode || acc.accountName} (Row {acc.rowIndex + 1})
+                      {autoCreateAccounts && ' - will be created'}
                     </li>
                   ))}
                   {parseResult.unresolvedAccounts.length > 10 && (
@@ -632,12 +661,20 @@ export default function ImportTransactionsClient() {
                         {voucher.lines.map((line, idx) => {
                           const isUnresolved = !line.accountId;
                           const displayAccount = isUnresolved
-                            ? `${line.rawAccountCode || line.rawAccountName || 'Unknown'} (unresolved)`
+                            ? `${line.rawAccountCode || line.rawAccountName || 'Unknown'} ${
+                                autoCreateAccounts ? '(will be created)' : '(unresolved)'
+                              }`
                             : `${line.accountCode} - ${line.accountName}`;
                           
                           return (
-                            <tr key={idx} className={isUnresolved ? 'bg-red-50' : ''}>
-                              <td className={`px-2 py-1 ${isUnresolved ? 'text-red-700 font-medium' : ''}`}>
+                            <tr key={idx} className={isUnresolved ? (autoCreateAccounts ? 'bg-yellow-50' : 'bg-red-50') : ''}>
+                              <td className={`px-2 py-1 ${
+                                isUnresolved
+                                  ? autoCreateAccounts
+                                    ? 'text-yellow-700 font-medium'
+                                    : 'text-red-700 font-medium'
+                                  : ''
+                              }`}>
                                 {displayAccount}
                               </td>
                               <td className="px-2 py-1 text-right">
@@ -681,7 +718,11 @@ export default function ImportTransactionsClient() {
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                 title={
                   !canProceedToStep4
-                    ? 'Please fix all blocking errors (unresolved accounts, unbalanced vouchers, etc.) before importing'
+                    ? `Please fix all blocking errors before importing. ${
+                        autoCreateAccounts
+                          ? 'Account creation warnings will be handled automatically.'
+                          : 'Enable "Auto-create missing accounts" to handle unresolved accounts automatically.'
+                      }`
                     : ''
                 }
               >
@@ -689,6 +730,8 @@ export default function ImportTransactionsClient() {
                   ? 'Importing...'
                   : hasBlockingErrors
                     ? 'Fix Errors to Import'
+                    : autoCreateAccounts && warnings.some((w) => w.message.includes('Account not found'))
+                    ? 'Import Vouchers (Will Create Accounts)'
                     : 'Import Vouchers'}
               </button>
             </div>
