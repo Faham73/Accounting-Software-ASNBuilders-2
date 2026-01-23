@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requirePermissionServer } from '@/lib/rbac';
 import { prisma } from '@accounting/db';
-import DashboardLayout from '../../components/DashboardLayout';
+import DashboardLayout from '../../../components/DashboardLayout';
 import ProjectLedgerClient from './ProjectLedgerClient';
 
 export default async function ProjectLedgerPage({

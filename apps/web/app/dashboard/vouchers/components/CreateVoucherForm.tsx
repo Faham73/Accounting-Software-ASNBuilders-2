@@ -23,23 +23,51 @@ interface VoucherLine {
   projectId: string;
 }
 
-export default function CreateVoucherForm() {
+interface CreateVoucherFormProps {
+  voucher?: any;
+  voucherId?: string;
+}
+
+export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
+  const { voucher, voucherId } = props ?? {};
   const router = useRouter();
+  const isEdit = Boolean(voucher && voucherId);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
 
-  const [formData, setFormData] = useState({
-    date: new Date().toISOString().split('T')[0],
-    narration: '',
-    projectId: '',
+  const [formData, setFormData] = useState(() => {
+    if (voucher) {
+      return {
+        date: new Date(voucher.date).toISOString().split('T')[0],
+        narration: voucher.narration || '',
+        projectId: voucher.projectId || '',
+      };
+    }
+    return {
+      date: new Date().toISOString().split('T')[0],
+      narration: '',
+      projectId: '',
+    };
   });
 
-  const [lines, setLines] = useState<VoucherLine[]>([
-    { accountId: '', description: '', debit: '', credit: '', projectId: '' },
-    { accountId: '', description: '', debit: '', credit: '', projectId: '' },
-  ]);
+  const [lines, setLines] = useState<VoucherLine[]>(() => {
+    if (voucher?.lines?.length >= 2) {
+      return voucher.lines.map((l: any) => ({
+        accountId: l.accountId,
+        description: l.description || '',
+        debit: Number(l.debit),
+        credit: Number(l.credit),
+        projectId: l.projectId || '',
+      }));
+    }
+    return [
+      { accountId: '', description: '', debit: '', credit: '', projectId: '' },
+      { accountId: '', description: '', debit: '', credit: '', projectId: '' },
+    ];
+  });
 
   useEffect(() => {
     // Fetch accounts
@@ -133,8 +161,11 @@ export default function CreateVoucherForm() {
         })),
       };
 
-      const response = await fetch('/api/vouchers', {
-        method: 'POST',
+      const url = isEdit ? `/api/vouchers/${voucherId}` : '/api/vouchers';
+      const method = isEdit ? 'PATCH' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -144,14 +175,18 @@ export default function CreateVoucherForm() {
       const data = await response.json();
 
       if (!data.ok) {
-        setError(data.error || 'Failed to create voucher');
+        setError(data.error || (isEdit ? 'Failed to update voucher' : 'Failed to create voucher'));
         return;
       }
 
-      router.push('/dashboard/vouchers');
+      if (isEdit) {
+        router.push(`/dashboard/vouchers/${voucherId}`);
+      } else {
+        router.push('/dashboard/vouchers');
+      }
       router.refresh();
     } catch (err) {
-      setError('An error occurred while creating the voucher');
+      setError(isEdit ? 'An error occurred while updating the voucher' : 'An error occurred while creating the voucher');
     } finally {
       setIsSubmitting(false);
     }
@@ -352,19 +387,28 @@ export default function CreateVoucherForm() {
 
       {/* Actions */}
       <div className="flex gap-4 justify-end">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-        >
-          Cancel
-        </button>
+        {isEdit ? (
+          <a
+            href={`/dashboard/vouchers/${voucherId}`}
+            className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+          >
+            Cancel
+          </a>
+        ) : (
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        )}
         <button
           type="submit"
           disabled={isSubmitting || !isBalanced}
           className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
         >
-          {isSubmitting ? 'Creating...' : 'Create Voucher'}
+          {isSubmitting ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save' : 'Create Voucher')}
         </button>
       </div>
     </form>
