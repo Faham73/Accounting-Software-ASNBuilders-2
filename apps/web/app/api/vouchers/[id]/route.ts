@@ -208,6 +208,17 @@ export async function PATCH(
       }
     }
 
+    // Ensure office expenses don't have projectId
+    if (validatedData.expenseType === 'OFFICE_EXPENSE' && validatedData.projectId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Office expenses cannot have a project assigned',
+        },
+        { status: 400 }
+      );
+    }
+
     const before = { ...voucher };
 
     // Update voucher in transaction
@@ -218,7 +229,10 @@ export async function PATCH(
         data: {
           ...(validatedData.date && { date: validatedData.date }),
           ...(validatedData.narration !== undefined && { narration: validatedData.narration || null }),
-          ...(validatedData.projectId !== undefined && { projectId: validatedData.projectId || null }),
+          ...(validatedData.expenseType !== undefined && { expenseType: validatedData.expenseType || null }),
+          ...(validatedData.projectId !== undefined && {
+            projectId: validatedData.expenseType === 'OFFICE_EXPENSE' ? null : (validatedData.projectId || null),
+          }),
         },
       });
 
@@ -230,6 +244,7 @@ export async function PATCH(
         });
 
         // Create new lines
+        const expenseType = validatedData.expenseType ?? updatedVoucher.expenseType;
         await tx.voucherLine.createMany({
           data: validatedData.lines.map((line) => ({
             voucherId: params.id,
@@ -238,7 +253,7 @@ export async function PATCH(
             description: line.description || null,
             debit: line.debit,
             credit: line.credit,
-            projectId: line.projectId || null,
+            projectId: expenseType === 'OFFICE_EXPENSE' ? null : (line.projectId || null),
             vendorId: line.vendorId || null,
             costHeadId: line.costHeadId || null,
             paymentMethodId: line.paymentMethodId || null,

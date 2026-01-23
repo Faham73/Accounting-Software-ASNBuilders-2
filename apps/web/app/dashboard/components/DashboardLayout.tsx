@@ -101,6 +101,22 @@ export default async function DashboardLayout({
                   Vouchers
                 </Link>
               )}
+              {canReadVouchers && (
+                <Link
+                  href="/dashboard/tools/import-transactions"
+                  className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                >
+                  Tools
+                </Link>
+              )}
+              {canReadVouchers && (
+                <Link
+                  href="/dashboard/tools/import-transactions"
+                  className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-4"
+                >
+                  Import Transactions
+                </Link>
+              )}
               <Link
                 href="/dashboard/reports"
                 className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
@@ -108,12 +124,62 @@ export default async function DashboardLayout({
                 Reports
               </Link>
               {canReadVouchers && (
-                <Link
-                  href="/dashboard/reports/payables"
-                  className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-4"
-                >
-                  Payables
-                </Link>
+                <>
+                  <Link
+                    href="/dashboard/reports/payables"
+                    className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-4"
+                  >
+                    Payables
+                  </Link>
+                  <Link
+                    href="/dashboard/reports/overhead"
+                    className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-4"
+                  >
+                    Overhead
+                  </Link>
+                  <Link
+                    href="/dashboard/reports/financial"
+                    className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-4 font-medium"
+                  >
+                    Financial Statements
+                  </Link>
+                  <Link
+                    href="/dashboard/reports/financial/cash-book"
+                    className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-8"
+                  >
+                    Cash Book
+                  </Link>
+                  <Link
+                    href="/dashboard/reports/financial/bank-book"
+                    className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-8"
+                  >
+                    Bank Book
+                  </Link>
+                  <Link
+                    href="/dashboard/reports/financial/trial-balance"
+                    className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-8"
+                  >
+                    Trial Balance
+                  </Link>
+                  <Link
+                    href="/dashboard/reports/financial/profit-loss"
+                    className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-8"
+                  >
+                    Profit & Loss
+                  </Link>
+                  <Link
+                    href="/dashboard/reports/financial/balance-sheet"
+                    className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-8"
+                  >
+                    Balance Sheet
+                  </Link>
+                  <Link
+                    href="/dashboard/reports/financial/project-profitability"
+                    className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-8"
+                  >
+                    Project Profitability
+                  </Link>
+                </>
               )}
             </nav>
           </div>

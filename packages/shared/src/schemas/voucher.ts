@@ -26,12 +26,18 @@ export const VoucherLineCreateSchema = z.object({
 );
 
 /**
+ * Expense type enum values
+ */
+export const ExpenseTypeEnum = z.enum(['PROJECT_EXPENSE', 'OFFICE_EXPENSE']);
+
+/**
  * Schema for creating a voucher
  */
 export const VoucherCreateSchema = z.object({
   date: z.coerce.date(),
   narration: z.string().optional().nullable(),
   projectId: z.string().optional().nullable(),
+  expenseType: ExpenseTypeEnum.optional().nullable(),
   lines: z.array(VoucherLineCreateSchema).min(2, 'At least 2 voucher lines are required'),
 }).refine(
   (data) => {
@@ -40,6 +46,16 @@ export const VoucherCreateSchema = z.object({
     return Math.abs(totalDebit - totalCredit) < 0.01; // Allow small tolerance for floating point
   },
   { message: 'Total debit must equal total credit' }
+).refine(
+  (data) => {
+    // If expenseType is OFFICE_EXPENSE, projectId must be null
+    if (data.expenseType === 'OFFICE_EXPENSE' && data.projectId) {
+      return false;
+    }
+    // If expenseType is PROJECT_EXPENSE, projectId should be provided (but allow null for backward compatibility)
+    return true;
+  },
+  { message: 'Office expenses cannot have a project assigned' }
 );
 
 /**
@@ -49,6 +65,7 @@ export const VoucherUpdateSchema = z.object({
   date: z.coerce.date().optional(),
   narration: z.string().optional().nullable(),
   projectId: z.string().optional().nullable(),
+  expenseType: ExpenseTypeEnum.optional().nullable(),
   lines: z.array(VoucherLineCreateSchema).min(2, 'At least 2 voucher lines are required').optional(),
 }).refine(
   (data) => {
@@ -58,6 +75,15 @@ export const VoucherUpdateSchema = z.object({
     return Math.abs(totalDebit - totalCredit) < 0.01;
   },
   { message: 'Total debit must equal total credit' }
+).refine(
+  (data) => {
+    // If expenseType is OFFICE_EXPENSE, projectId must be null
+    if (data.expenseType === 'OFFICE_EXPENSE' && data.projectId) {
+      return false;
+    }
+    return true;
+  },
+  { message: 'Office expenses cannot have a project assigned' }
 );
 
 /**
@@ -79,3 +105,4 @@ export type VoucherCreate = z.infer<typeof VoucherCreateSchema>;
 export type VoucherUpdate = z.infer<typeof VoucherUpdateSchema>;
 export type VoucherListFilters = z.infer<typeof VoucherListFiltersSchema>;
 export type VoucherStatus = z.infer<typeof VoucherStatusEnum>;
+export type ExpenseType = z.infer<typeof ExpenseTypeEnum>;

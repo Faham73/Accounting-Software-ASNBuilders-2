@@ -9,6 +9,7 @@ import { prisma } from '@accounting/db';
 import { ProjectCostSummaryFiltersSchema } from '@accounting/shared';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
+import { getProjectAllocatedOverhead } from '@/lib/reports/overhead';
 
 /**
  * GET /api/projects/[id]/cost-summary
@@ -46,6 +47,7 @@ export async function GET(
 
     // Parse and validate query parameters
     const { searchParams } = new URL(request.url);
+    const includeAllocatedOverhead = searchParams.get('includeAllocatedOverhead') === 'true';
     const filters = ProjectCostSummaryFiltersSchema.parse({
       from: searchParams.get('from') || undefined,
       to: searchParams.get('to') || undefined,
@@ -189,10 +191,31 @@ export async function GET(
     });
 
     // Calculate grand total
-    const totalCost = Array.from(categoryTotals.values()).reduce(
+    let totalCost = Array.from(categoryTotals.values()).reduce(
       (sum, amount) => sum + amount,
       0
     );
+
+    // Add allocated overhead if requested
+    let allocatedOverhead = 0;
+    if (includeAllocatedOverhead && filters.from && filters.to) {
+      // Calculate allocated overhead for each month in the date range
+      const fromDate = new Date(filters.from);
+      const toDate = new Date(filters.to);
+      const currentMonth = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1);
+      
+      while (currentMonth <= toDate) {
+        const monthAllocated = await getProjectAllocatedOverhead(
+          auth.companyId,
+          params.id,
+          currentMonth
+        );
+        allocatedOverhead += monthAllocated;
+        currentMonth.setMonth(currentMonth.getMonth() + 1);
+      }
+      
+      totalCost += allocatedOverhead;
+    }
 
     return NextResponse.json({
       ok: true,
@@ -208,10 +231,12 @@ export async function GET(
           costHeadId: filters.costHeadId,
           category: filters.category,
           paymentMethodId: filters.paymentMethodId,
+          includeAllocatedOverhead,
         },
         summaryByCategory,
         grandTotals: {
           totalCost,
+          allocatedOverhead: includeAllocatedOverhead ? allocatedOverhead : undefined,
         },
       },
     });

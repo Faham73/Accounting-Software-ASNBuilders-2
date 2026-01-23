@@ -2,8 +2,8 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { requirePermissionServer } from '@/lib/rbac';
 import { prisma } from '@accounting/db';
-import DashboardLayout from '../../../components/DashboardLayout';
-import CreateVoucherForm from '../../components/CreateVoucherForm';
+import DashboardLayout from '@/app/dashboard/components/DashboardLayout';
+import CreateVoucherForm from '@/app/dashboard/vouchers/components/CreateVoucherForm';
 
 export default async function EditVoucherPage({
   params,

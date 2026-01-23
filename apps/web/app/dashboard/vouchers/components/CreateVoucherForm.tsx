@@ -44,12 +44,14 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
         date: new Date(voucher.date).toISOString().split('T')[0],
         narration: voucher.narration || '',
         projectId: voucher.projectId || '',
+        expenseType: voucher.expenseType || 'PROJECT_EXPENSE',
       };
     }
     return {
       date: new Date().toISOString().split('T')[0],
       narration: '',
       projectId: '',
+      expenseType: 'PROJECT_EXPENSE' as 'PROJECT_EXPENSE' | 'OFFICE_EXPENSE',
     };
   });
 
@@ -148,16 +150,20 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
     setIsSubmitting(true);
 
     try {
+      // If office expense, ensure projectId is null
+      const finalProjectId = formData.expenseType === 'OFFICE_EXPENSE' ? null : (formData.projectId || null);
+
       const payload = {
         date: formData.date,
         narration: formData.narration || null,
-        projectId: formData.projectId || null,
+        projectId: finalProjectId,
+        expenseType: formData.expenseType,
         lines: lines.map((line) => ({
           accountId: line.accountId,
           description: line.description || null,
           debit: typeof line.debit === 'string' ? parseFloat(line.debit) || 0 : line.debit || 0,
           credit: typeof line.credit === 'string' ? parseFloat(line.credit) || 0 : line.credit || 0,
-          projectId: line.projectId || null,
+          projectId: formData.expenseType === 'OFFICE_EXPENSE' ? null : (line.projectId || null),
         })),
       };
 
@@ -220,22 +226,48 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
         </div>
 
         <div>
+          <label htmlFor="expenseType" className="block text-sm font-medium text-gray-700">
+            Expense Type <span className="text-red-500">*</span>
+          </label>
+          <select
+            id="expenseType"
+            value={formData.expenseType}
+            onChange={(e) => {
+              const newExpenseType = e.target.value as 'PROJECT_EXPENSE' | 'OFFICE_EXPENSE';
+              setFormData({
+                ...formData,
+                expenseType: newExpenseType,
+                projectId: newExpenseType === 'OFFICE_EXPENSE' ? '' : formData.projectId,
+              });
+            }}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          >
+            <option value="PROJECT_EXPENSE">Project Expense</option>
+            <option value="OFFICE_EXPENSE">Office (Overhead) Expense</option>
+          </select>
+        </div>
+
+        <div>
           <label htmlFor="projectId" className="block text-sm font-medium text-gray-700">
-            Project (Optional)
+            Project {formData.expenseType === 'PROJECT_EXPENSE' ? '(Optional)' : ''}
           </label>
           <select
             id="projectId"
             value={formData.projectId}
             onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+            disabled={formData.expenseType === 'OFFICE_EXPENSE'}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
           >
-            <option value="">None</option>
+            <option value="">{formData.expenseType === 'OFFICE_EXPENSE' ? 'N/A (Office Expense)' : 'None'}</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
               </option>
             ))}
           </select>
+          {formData.expenseType === 'OFFICE_EXPENSE' && (
+            <p className="mt-1 text-xs text-gray-500">Office expenses are not assigned to projects</p>
+          )}
         </div>
 
         <div className="md:col-span-2">
@@ -307,9 +339,10 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
                     <select
                       value={line.projectId}
                       onChange={(e) => updateLine(index, 'projectId', e.target.value)}
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                      disabled={formData.expenseType === 'OFFICE_EXPENSE'}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
                     >
-                      <option value="">None</option>
+                      <option value="">{formData.expenseType === 'OFFICE_EXPENSE' ? 'N/A' : 'None'}</option>
                       {projects.map((project) => (
                         <option key={project.id} value={project.id}>
                           {project.name}

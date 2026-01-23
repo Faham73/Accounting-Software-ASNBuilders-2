@@ -16,7 +16,8 @@
     "@accounting/shared": "*",
     "jose": "^5.2.0",
     "zod": "^3.22.4",
-    "bcrypt": "^5.1.1"
+    "bcrypt": "^5.1.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "typescript": "^5.3.3",

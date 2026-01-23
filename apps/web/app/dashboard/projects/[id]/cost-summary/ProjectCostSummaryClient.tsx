@@ -14,6 +14,7 @@ interface CostSummaryResponse {
   summaryByCategory: CategorySummary[];
   grandTotals: {
     totalCost: number;
+    allocatedOverhead?: number;
   };
 }
 
@@ -40,6 +41,7 @@ export default function ProjectCostSummaryClient({
     costHeadId: '',
     category: '',
     paymentMethodId: '',
+    includeAllocatedOverhead: false,
   });
 
   // Filter options
@@ -57,6 +59,7 @@ export default function ProjectCostSummaryClient({
       if (filters.costHeadId) params.append('costHeadId', filters.costHeadId);
       if (filters.category) params.append('category', filters.category);
       if (filters.paymentMethodId) params.append('paymentMethodId', filters.paymentMethodId);
+      if (filters.includeAllocatedOverhead) params.append('includeAllocatedOverhead', 'true');
 
       const response = await fetch(`/api/projects/${projectId}/cost-summary?${params.toString()}`);
       const result = await response.json();
@@ -115,6 +118,7 @@ export default function ProjectCostSummaryClient({
       costHeadId: '',
       category: '',
       paymentMethodId: '',
+      includeAllocatedOverhead: false,
     });
   };
 
@@ -233,6 +237,17 @@ export default function ProjectCostSummaryClient({
               ))}
             </select>
           </div>
+          <div className="flex items-center">
+            <label className="flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={filters.includeAllocatedOverhead}
+                onChange={(e) => setFilters({ ...filters, includeAllocatedOverhead: e.target.checked })}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm text-gray-700">Include allocated overhead</span>
+            </label>
+          </div>
         </div>
         <div className="flex gap-2">
           <button
@@ -283,6 +298,16 @@ export default function ProjectCostSummaryClient({
               ))}
             </tbody>
             <tfoot className="bg-gray-100">
+              {data.grandTotals.allocatedOverhead !== undefined && (
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    Allocated Overhead
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                    {formatCurrency(data.grandTotals.allocatedOverhead)}
+                  </td>
+                </tr>
+              )}
               <tr>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
                   Grand Total

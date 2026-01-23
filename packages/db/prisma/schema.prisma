@@ -39,6 +39,16 @@ enum VoucherType {
   CONTRA
 }
 
+enum ExpenseType {
+  PROJECT_EXPENSE
+  OFFICE_EXPENSE
+}
+
+enum OverheadAllocationMethod {
+  PERCENT
+  CONTRACT_VALUE
+}
+
 enum VoucherStatus {
   DRAFT
   POSTED
@@ -78,6 +88,8 @@ model Company {
   voucherLines             VoucherLine[]
   auditLogs                AuditLog[]
   projectCostCategoryMaps  ProjectCostCategoryMap[]
+  overheadAllocationRules  OverheadAllocationRule[]
+  overheadAllocationResults OverheadAllocationResult[]
 
   @@map("companies")
 }
@@ -97,6 +109,7 @@ model User {
   createdVouchers    Voucher[]     @relation("VoucherCreator")
   postedVouchers     Voucher[]     @relation("VoucherPoster")
   auditLogs          AuditLog[]
+  createdAllocationRules OverheadAllocationRule[] @relation("AllocationRuleCreator")
 
   @@index([companyId])
   @@map("users")
@@ -121,6 +134,7 @@ model Project {
   company       Company       @relation(fields: [companyId], references: [id])
   vouchers      Voucher[]
   voucherLines  VoucherLine[]
+  overheadAllocations OverheadAllocationResult[]
 
   @@index([companyId])
   @@map("projects")
@@ -226,6 +240,7 @@ model Voucher {
   projectId       String?       @map("project_id")
   voucherNo       String        @map("voucher_no")
   type            VoucherType?  @default(JOURNAL)
+  expenseType     ExpenseType?  @map("expense_type")
   date            DateTime
   status          VoucherStatus @default(DRAFT)
   narration       String?
@@ -246,6 +261,7 @@ model Voucher {
   @@index([companyId, date])
   @@index([companyId, status])
   @@index([companyId, type])
+  @@index([companyId, expenseType])
   @@map("vouchers")
 }
 
@@ -333,4 +349,43 @@ model AuditLog {
   @@index([companyId, entityType, entityId])
   @@index([actorUserId])
   @@map("audit_logs")
+}
+
+model OverheadAllocationRule {
+  id          String                    @id @default(cuid())
+  companyId   String                    @map("company_id")
+  month       DateTime                  @db.Date
+  method      OverheadAllocationMethod
+  allocations Json?                     // For PERCENT method: { projectId: percent }
+  createdById String                    @map("created_by_id")
+  createdAt   DateTime                  @default(now()) @map("created_at")
+  updatedAt   DateTime                  @updatedAt @map("updated_at")
+
+  company    Company                    @relation(fields: [companyId], references: [id])
+  createdBy  User                       @relation("AllocationRuleCreator", fields: [createdById], references: [id])
+  results    OverheadAllocationResult[]
+
+  @@unique([companyId, month])
+  @@index([companyId, month])
+  @@map("overhead_allocation_rules")
+}
+
+model OverheadAllocationResult {
+  id          String   @id @default(cuid())
+  ruleId      String   @map("rule_id")
+  companyId   String   @map("company_id")
+  projectId   String   @map("project_id")
+  amount      Decimal  @db.Decimal(18, 2)
+  method      OverheadAllocationMethod
+  sourceOverheadTotal Decimal @map("source_overhead_total") @db.Decimal(18, 2)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rule    OverheadAllocationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  company Company                @relation(fields: [companyId], references: [id])
+  project Project                @relation(fields: [projectId], references: [id])
+
+  @@index([ruleId])
+  @@index([companyId, projectId])
+  @@index([companyId, projectId, createdAt])
+  @@map("overhead_allocation_results")
 }

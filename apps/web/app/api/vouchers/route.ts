@@ -184,6 +184,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Ensure office expenses don't have projectId
+    if (validatedData.expenseType === 'OFFICE_EXPENSE' && validatedData.projectId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Office expenses cannot have a project assigned',
+        },
+        { status: 400 }
+      );
+    }
+
     // Generate voucher number
     const voucherNo = await generateVoucherNumber(auth.companyId, validatedData.date);
 
@@ -192,11 +203,12 @@ export async function POST(request: NextRequest) {
       const newVoucher = await tx.voucher.create({
         data: {
           companyId: auth.companyId,
-          projectId: validatedData.projectId || null,
+          projectId: validatedData.expenseType === 'OFFICE_EXPENSE' ? null : (validatedData.projectId || null),
           voucherNo,
           date: validatedData.date,
           status: 'DRAFT',
           narration: validatedData.narration || null,
+          expenseType: validatedData.expenseType || null,
           createdByUserId: auth.userId,
           lines: {
             create: validatedData.lines.map((line) => ({
@@ -205,7 +217,7 @@ export async function POST(request: NextRequest) {
               description: line.description || null,
               debit: line.debit,
               credit: line.credit,
-              projectId: line.projectId || null,
+              projectId: validatedData.expenseType === 'OFFICE_EXPENSE' ? null : (line.projectId || null),
               vendorId: line.vendorId || null,
               costHeadId: line.costHeadId || null,
               paymentMethodId: line.paymentMethodId || null,
