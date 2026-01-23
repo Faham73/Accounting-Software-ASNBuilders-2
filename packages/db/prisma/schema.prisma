@@ -1,0 +1,315 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  ACCOUNTANT
+  ENGINEER
+  DATA_ENTRY
+  VIEWER
+}
+
+enum ProjectStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  CLOSED
+}
+
+enum PaymentMethodType {
+  CASH
+  BANK
+  CHEQUE
+  MOBILE
+}
+
+enum VoucherType {
+  RECEIPT
+  PAYMENT
+  JOURNAL
+  CONTRA
+}
+
+enum VoucherStatus {
+  DRAFT
+  POSTED
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  INCOME
+  EXPENSE
+  EQUITY
+}
+
+enum ProjectCostCategory {
+  CIVIL
+  MATERIALS
+  MATI_KATA
+  DHALAI
+  OTHERS
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users           User[]
+  projects        Project[]
+  vendors         Vendor[]
+  costHeads                CostHead[]
+  paymentMethods           PaymentMethod[]
+  attachments              Attachment[]
+  accounts                 Account[]
+  vouchers                 Voucher[]
+  voucherLines             VoucherLine[]
+  auditLogs                AuditLog[]
+  projectCostCategoryMaps  ProjectCostCategoryMap[]
+
+  @@map("companies")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String   @map("password_hash")
+  role         UserRole
+  companyId    String   @map("company_id")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  company            Company       @relation(fields: [companyId], references: [id])
+  uploadedAttachments Attachment[]
+  createdVouchers    Voucher[]     @relation("VoucherCreator")
+  postedVouchers     Voucher[]     @relation("VoucherPoster")
+  auditLogs          AuditLog[]
+
+  @@index([companyId])
+  @@map("users")
+}
+
+model Project {
+  id              String        @id @default(cuid())
+  companyId       String        @map("company_id")
+  name            String
+  clientName      String?       @map("client_name")
+  clientContact   String?       @map("client_contact")
+  siteLocation    String?       @map("site_location")
+  startDate       DateTime?     @map("start_date")
+  expectedEndDate DateTime?     @map("expected_end_date")
+  contractValue   Decimal?      @map("contract_value") @db.Decimal(15, 2)
+  status          ProjectStatus @default(DRAFT)
+  assignedManager String?       @map("assigned_manager")
+  isActive        Boolean       @default(true) @map("is_active")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  company       Company       @relation(fields: [companyId], references: [id])
+  vouchers      Voucher[]
+  voucherLines  VoucherLine[]
+
+  @@index([companyId])
+  @@map("projects")
+}
+
+model Vendor {
+  id        String   @id @default(cuid())
+  companyId String   @map("company_id")
+  name      String
+  phone     String?
+  address   String?
+  notes     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company      Company      @relation(fields: [companyId], references: [id])
+  voucherLines VoucherLine[]
+
+  @@index([companyId])
+  @@map("vendors")
+}
+
+model CostHead {
+  id        String   @id @default(cuid())
+  companyId String   @map("company_id")
+  name      String
+  code      String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company                  Company                  @relation(fields: [companyId], references: [id])
+  voucherLines             VoucherLine[]
+  projectCostCategoryMaps  ProjectCostCategoryMap[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("cost_heads")
+}
+
+model PaymentMethod {
+  id        String            @id @default(cuid())
+  companyId String            @map("company_id")
+  name      String
+  type      PaymentMethodType
+  isActive  Boolean           @default(true) @map("is_active")
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  company       Company       @relation(fields: [companyId], references: [id])
+  voucherLines  VoucherLine[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("payment_methods")
+}
+
+model Attachment {
+  id              String   @id @default(cuid())
+  companyId       String   @map("company_id")
+  uploadedByUserId String  @map("uploaded_by_user_id")
+  url             String
+  fileName        String   @map("file_name")
+  mimeType        String   @map("mime_type")
+  sizeBytes       Int      @map("size_bytes")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  company    Company @relation(fields: [companyId], references: [id])
+  uploadedBy User    @relation(fields: [uploadedByUserId], references: [id])
+
+  @@index([companyId])
+  @@index([uploadedByUserId])
+  @@map("attachments")
+}
+
+model Account {
+  id        String      @id @default(cuid())
+  companyId String      @map("company_id")
+  code      String
+  name      String
+  type      AccountType
+  parentId  String?     @map("parent_id")
+  isActive  Boolean     @default(true) @map("is_active")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  company      Company       @relation(fields: [companyId], references: [id])
+  parent       Account?      @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children     Account[]     @relation("AccountHierarchy")
+  voucherLines VoucherLine[]
+
+  @@unique([companyId, code])
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([parentId])
+  @@map("accounts")
+}
+
+model Voucher {
+  id              String        @id @default(cuid())
+  companyId       String        @map("company_id")
+  projectId       String?       @map("project_id")
+  voucherNo       String
+  date            DateTime
+  status          VoucherStatus @default(DRAFT)
+  narration       String?
+  createdByUserId String        @map("created_by_user_id")
+  postedByUserId  String?       @map("posted_by_user_id")
+  postedAt        DateTime?     @map("posted_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  company   Company       @relation(fields: [companyId], references: [id])
+  project   Project?      @relation(fields: [projectId], references: [id])
+  createdBy User          @relation("VoucherCreator", fields: [createdByUserId], references: [id])
+  postedBy  User?         @relation("VoucherPoster", fields: [postedByUserId], references: [id])
+  lines     VoucherLine[]
+
+  @@unique([companyId, voucherNo])
+  @@index([companyId, date])
+  @@index([companyId, status])
+  @@map("vouchers")
+}
+
+model VoucherLine {
+  id             String   @id @default(cuid())
+  voucherId      String   @map("voucher_id")
+  companyId      String   @map("company_id")
+  accountId      String   @map("account_id")
+  description    String?
+  debit          Decimal  @default(0) @db.Decimal(18, 2)
+  credit         Decimal  @default(0) @db.Decimal(18, 2)
+  projectId      String?  @map("project_id")
+  vendorId       String?  @map("vendor_id")
+  costHeadId     String?  @map("cost_head_id")
+  paymentMethodId String? @map("payment_method_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  voucher       Voucher       @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  company       Company       @relation(fields: [companyId], references: [id])
+  account       Account       @relation(fields: [accountId], references: [id])
+  project       Project?      @relation(fields: [projectId], references: [id])
+  vendor        Vendor?       @relation(fields: [vendorId], references: [id])
+  costHead      CostHead?     @relation(fields: [costHeadId], references: [id])
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+
+  @@index([voucherId])
+  @@index([companyId])
+  @@index([accountId])
+  @@index([companyId, projectId])
+  @@index([companyId, projectId, voucherId])
+  @@map("voucher_lines")
+}
+
+model ProjectCostCategoryMap {
+  id        String             @id @default(cuid())
+  companyId String             @map("company_id")
+  costHeadId String            @map("cost_head_id")
+  category  ProjectCostCategory
+  isActive  Boolean            @default(true) @map("is_active")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+
+  company  Company  @relation(fields: [companyId], references: [id])
+  costHead CostHead @relation(fields: [costHeadId], references: [id])
+
+  @@unique([companyId, costHeadId])
+  @@index([companyId])
+  @@index([companyId, category])
+  @@map("project_cost_category_maps")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  companyId   String   @map("company_id")
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  action      String
+  actorUserId String   @map("actor_user_id")
+  before      Json?
+  after       Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+  actor   User    @relation(fields: [actorUserId], references: [id])
+
+  @@index([companyId, entityType, entityId])
+  @@index([actorUserId])
+  @@map("audit_logs")
+}
