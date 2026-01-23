@@ -29,11 +29,15 @@ interface VoucherPreview {
     vendor?: string;
   };
   lines: Array<{
-    accountCode: string;
-    accountName: string;
+    accountId: string | null;
+    accountCode: string | null;
+    accountName: string | null;
+    rawAccountCode?: string | null;
+    rawAccountName?: string | null;
     debit: number;
     credit: number;
     description?: string;
+    matchedBy?: 'id' | 'code' | 'name' | 'none';
   }>;
   totals: {
     debit: number;
@@ -42,6 +46,7 @@ interface VoucherPreview {
   };
   errors: string[];
   warnings: string[];
+  parsedLineCount: number;
 }
 
 interface ParseResult {
@@ -74,6 +79,7 @@ export default function ImportTransactionsClient() {
   const [isPosting, setIsPosting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [autoCreateAccounts, setAutoCreateAccounts] = useState(false);
 
   const targetFields = [
     { value: '', label: 'Skip column' },
@@ -252,9 +258,37 @@ export default function ImportTransactionsClient() {
       return;
     }
 
-    if (parseResult.errors.length > 0) {
-      setError('Cannot import vouchers with errors. Please fix errors first.');
+    // Check for blocking errors (excluding "Account not found" if auto-create is enabled)
+    const blockingErrors = parseResult.errors.filter((err) => {
+      if (autoCreateAccounts && err.message.includes('Account not found')) {
+        return false; // Skip account not found errors if auto-create is enabled
+      }
+      return (
+        err.message.includes('Invalid date') ||
+        err.message.includes('not balanced') ||
+        err.message.includes('must have at least 2 lines') ||
+        err.message.includes('Both debit and credit cannot be greater than 0')
+      );
+    });
+
+    if (blockingErrors.length > 0) {
+      setError(
+        `Cannot import vouchers with blocking errors. Please fix ${blockingErrors.length} error(s) first (unbalanced vouchers, invalid dates, etc.).`
+      );
       return;
+    }
+
+    // Check for unresolved accounts in lines (only if auto-create is disabled)
+    if (!autoCreateAccounts) {
+      const vouchersWithUnresolved = parseResult.vouchers.filter((v) =>
+        v.lines.some((line) => !line.accountId)
+      );
+      if (vouchersWithUnresolved.length > 0) {
+        setError(
+          `Cannot import: ${vouchersWithUnresolved.length} voucher(s) have unresolved accounts. Please fix account mappings or enable "Auto-create missing accounts".`
+        );
+        return;
+      }
     }
 
     setIsImporting(true);
@@ -266,6 +300,9 @@ export default function ImportTransactionsClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vouchers: parseResult.vouchers,
+          options: {
+            autoCreateAccounts,
+          },
         }),
       });
 
@@ -322,7 +359,21 @@ export default function ImportTransactionsClient() {
   const canProceedToStep2 = file !== null;
   const canProceedToStep3 =
     options.dateColumn && options.accountColumn && options.debitColumn && options.creditColumn;
-  const canProceedToStep4 = parseResult && parseResult.errors.length === 0;
+  
+  // Block import if there are blocking errors (unresolved accounts if auto-create disabled, unbalanced, etc.)
+  const hasBlockingErrors = parseResult && parseResult.errors.some((err) => {
+    // If auto-create is enabled, skip "Account not found" errors
+    if (autoCreateAccounts && err.message.includes('Account not found')) {
+      return false;
+    }
+    return (
+      err.message.includes('Invalid date') ||
+      err.message.includes('not balanced') ||
+      err.message.includes('must have at least 2 lines') ||
+      err.message.includes('Both debit and credit cannot be greater than 0')
+    );
+  });
+  const canProceedToStep4 = parseResult && !hasBlockingErrors;
 
   return (
     <div className="space-y-6">
@@ -481,15 +532,33 @@ export default function ImportTransactionsClient() {
 
             {parseResult.errors.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-red-800 mb-2">Validation Errors</h3>
+                <h3 className="text-sm font-semibold text-red-800 mb-2">
+                  Blocking Errors (Must Fix Before Import)
+                </h3>
                 <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
-                  {parseResult.errors.slice(0, 10).map((err, idx) => (
+                  {parseResult.errors.slice(0, 20).map((err, idx) => (
                     <li key={idx}>
-                      {err.voucherKey}: {err.message}
+                      <strong>{err.voucherKey}:</strong> {err.message}
                     </li>
                   ))}
-                  {parseResult.errors.length > 10 && (
-                    <li>... and {parseResult.errors.length - 10} more errors</li>
+                  {parseResult.errors.length > 20 && (
+                    <li>... and {parseResult.errors.length - 20} more errors</li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {parseResult.warnings.length > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-yellow-800 mb-2">Warnings</h3>
+                <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1">
+                  {parseResult.warnings.slice(0, 10).map((warn, idx) => (
+                    <li key={idx}>
+                      <strong>{warn.voucherKey}:</strong> {warn.message}
+                    </li>
+                  ))}
+                  {parseResult.warnings.length > 10 && (
+                    <li>... and {parseResult.warnings.length - 10} more warnings</li>
                   )}
                 </ul>
               </div>
@@ -497,8 +566,10 @@ export default function ImportTransactionsClient() {
 
             {parseResult.unresolvedAccounts.length > 0 && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-yellow-800 mb-2">Unresolved Accounts</h3>
-                <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1">
+                <h3 className="text-sm font-semibold text-yellow-800 mb-2">
+                  Unresolved Accounts ({parseResult.unresolvedAccounts.length})
+                </h3>
+                <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1 mb-4">
                   {parseResult.unresolvedAccounts.slice(0, 10).map((acc, idx) => (
                     <li key={idx}>
                       {acc.accountCode || acc.accountName} (Row {acc.rowIndex + 1})
@@ -508,6 +579,25 @@ export default function ImportTransactionsClient() {
                     <li>... and {parseResult.unresolvedAccounts.length - 10} more</li>
                   )}
                 </ul>
+                <div className="mt-4 p-3 bg-white border border-yellow-300 rounded">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoCreateAccounts}
+                      onChange={(e) => setAutoCreateAccounts(e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="ml-2 text-sm font-medium text-gray-900">
+                      Auto-create missing accounts during import
+                    </span>
+                  </label>
+                  {autoCreateAccounts && (
+                    <p className="mt-2 text-xs text-yellow-800">
+                      ⚠️ Missing accounts will be created with default type = EXPENSE unless code prefix rules match
+                      (1=ASSET, 2=LIABILITY, 3=EQUITY, 4=INCOME, 5/6=EXPENSE).
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 
@@ -539,24 +629,38 @@ export default function ImportTransactionsClient() {
                         </tr>
                       </thead>
                       <tbody>
-                        {voucher.lines.map((line, idx) => (
-                          <tr key={idx}>
-                            <td className="px-2 py-1">
-                              {line.accountCode} - {line.accountName}
-                            </td>
-                            <td className="px-2 py-1 text-right">
-                              {line.debit > 0 ? toMoney(line.debit) : '-'}
-                            </td>
-                            <td className="px-2 py-1 text-right">
-                              {line.credit > 0 ? toMoney(line.credit) : '-'}
-                            </td>
-                          </tr>
-                        ))}
+                        {voucher.lines.map((line, idx) => {
+                          const isUnresolved = !line.accountId;
+                          const displayAccount = isUnresolved
+                            ? `${line.rawAccountCode || line.rawAccountName || 'Unknown'} (unresolved)`
+                            : `${line.accountCode} - ${line.accountName}`;
+                          
+                          return (
+                            <tr key={idx} className={isUnresolved ? 'bg-red-50' : ''}>
+                              <td className={`px-2 py-1 ${isUnresolved ? 'text-red-700 font-medium' : ''}`}>
+                                {displayAccount}
+                              </td>
+                              <td className="px-2 py-1 text-right">
+                                {line.debit > 0 ? toMoney(line.debit) : '-'}
+                              </td>
+                              <td className="px-2 py-1 text-right">
+                                {line.credit > 0 ? toMoney(line.credit) : '-'}
+                              </td>
+                            </tr>
+                          );
+                        })}
                         <tr className="font-medium border-t">
-                          <td className="px-2 py-1">Total</td>
+                          <td className="px-2 py-1">Total ({voucher.parsedLineCount || voucher.lines.length} lines)</td>
                           <td className="px-2 py-1 text-right">{toMoney(voucher.totals.debit)}</td>
                           <td className="px-2 py-1 text-right">{toMoney(voucher.totals.credit)}</td>
                         </tr>
+                        {voucher.totals.difference >= 0.01 && (
+                          <tr className="bg-red-50">
+                            <td colSpan={3} className="px-2 py-1 text-center text-red-700 font-medium">
+                              Unbalanced: Difference = {toMoney(voucher.totals.difference)}
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -575,8 +679,17 @@ export default function ImportTransactionsClient() {
                 onClick={handleImport}
                 disabled={!canProceedToStep4 || isImporting}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                title={
+                  !canProceedToStep4
+                    ? 'Please fix all blocking errors (unresolved accounts, unbalanced vouchers, etc.) before importing'
+                    : ''
+                }
               >
-                {isImporting ? 'Importing...' : 'Import Vouchers'}
+                {isImporting
+                  ? 'Importing...'
+                  : hasBlockingErrors
+                    ? 'Fix Errors to Import'
+                    : 'Import Vouchers'}
               </button>
             </div>
           </div>
@@ -618,35 +731,55 @@ export default function ImportTransactionsClient() {
 
             {importResult.imported > 0 && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-sm text-green-800 mb-4">
-                  Successfully imported {importResult.imported} voucher(s) as DRAFT.
+                <p className="text-sm text-green-800 mb-2">
+                  Successfully imported {importResult.importedVoucherCount || importResult.imported} voucher(s) with{' '}
+                  {importResult.importedLineCount || 0} line(s) as DRAFT.
                 </p>
-                {!importResult.postingResult && (
-                  <button
-                    onClick={handleBulkPost}
-                    disabled={isPosting}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    {isPosting ? 'Posting...' : 'Bulk Post Imported Vouchers'}
-                  </button>
-                )}
-                {importResult.postingResult && (
-                  <div className="mt-4">
-                    <p className="text-sm text-green-800 mb-2">
-                      Posted: {importResult.postingResult.posted} | Skipped:{' '}
-                      {importResult.postingResult.skipped}
+                {importResult.createdAccountsCount > 0 && (
+                  <div className="mt-3 p-3 bg-white border border-green-300 rounded">
+                    <p className="text-sm font-medium text-green-800 mb-2">
+                      Created {importResult.createdAccountsCount} new account(s):
                     </p>
-                    {importResult.postingResult.errors.length > 0 && (
-                      <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
-                        {importResult.postingResult.errors.map((err: any, idx: number) => (
-                          <li key={idx}>
-                            Voucher {err.voucherId}: {err.error}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    <ul className="list-disc list-inside text-xs text-green-700 space-y-1">
+                      {importResult.createdAccounts?.slice(0, 10).map((acc: any, idx: number) => (
+                        <li key={idx}>
+                          {acc.code} - {acc.name}
+                        </li>
+                      ))}
+                      {importResult.createdAccountsCount > 10 && (
+                        <li>... and {importResult.createdAccountsCount - 10} more</li>
+                      )}
+                    </ul>
                   </div>
                 )}
+                <div className="mt-4">
+                  {!importResult.postingResult && (
+                    <button
+                      onClick={handleBulkPost}
+                      disabled={isPosting}
+                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    >
+                      {isPosting ? 'Posting...' : 'Bulk Post Imported Vouchers'}
+                    </button>
+                  )}
+                  {importResult.postingResult && (
+                    <div>
+                      <p className="text-sm text-green-800 mb-2">
+                        Posted: {importResult.postingResult.posted} | Skipped:{' '}
+                        {importResult.postingResult.skipped}
+                      </p>
+                      {importResult.postingResult.errors.length > 0 && (
+                        <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+                          {importResult.postingResult.errors.map((err: any, idx: number) => (
+                            <li key={idx}>
+                              Voucher {err.voucherId}: {err.error}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

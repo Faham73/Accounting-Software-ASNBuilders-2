@@ -1,5 +1,5 @@
 import { prisma } from '@accounting/db';
-import { VoucherType } from '@accounting/db';
+import { VoucherType, AccountType } from '@accounting/db';
 import { Decimal } from '@prisma/client/runtime/library';
 
 export interface ColumnMapping {
@@ -35,12 +35,15 @@ export interface VoucherGroup {
     vendor?: string;
   };
   lines: Array<{
-    accountId: string;
-    accountCode: string;
-    accountName: string;
+    accountId: string | null;
+    accountCode: string | null;
+    accountName: string | null;
+    rawAccountCode?: string | null;
+    rawAccountName?: string | null;
     debit: number;
     credit: number;
     description?: string;
+    matchedBy?: 'id' | 'code' | 'name' | 'none';
   }>;
   totals: {
     debit: number;
@@ -49,6 +52,7 @@ export interface VoucherGroup {
   };
   errors: string[];
   warnings: string[];
+  parsedLineCount: number; // Total parsed lines before filtering
 }
 
 export interface ValidationResult {
@@ -164,53 +168,188 @@ export function parseNumber(value: string | number | null | undefined): number {
 }
 
 /**
- * Resolve account by code or name
+ * Resolve account by ID, code, or name with priority
+ * Returns account info and how it was matched
  */
 export async function resolveAccount(
   companyId: string,
+  accountId?: string | null,
   accountCode?: string | null,
   accountName?: string | null
-): Promise<{ id: string; code: string; name: string } | null> {
-  if (!accountCode && !accountName) return null;
+): Promise<{
+  account: { id: string; code: string; name: string } | null;
+  matchedBy: 'id' | 'code' | 'name' | 'none';
+}> {
+  // Priority 1: If accountId provided, use it directly
+  if (accountId) {
+    const byId = await prisma.account.findFirst({
+      where: {
+        id: accountId,
+        companyId,
+        isActive: true,
+      },
+      select: { id: true, code: true, name: true },
+    });
+    if (byId) {
+      return { account: byId, matchedBy: 'id' };
+    }
+  }
 
-  // Try by code first
+  // Priority 2: Try by code (trim and normalize)
   if (accountCode) {
+    const normalizedCode = String(accountCode).trim().replace(/\s+/g, ' ');
     const byCode = await prisma.account.findFirst({
       where: {
         companyId,
-        code: accountCode,
+        code: normalizedCode,
         isActive: true,
       },
       select: { id: true, code: true, name: true },
     });
-    if (byCode) return byCode;
+    if (byCode) {
+      return { account: byCode, matchedBy: 'code' };
+    }
   }
 
-  // Try by exact name
+  // Priority 3: Try by exact name match
   if (accountName) {
+    const normalizedName = String(accountName).trim().replace(/\s+/g, ' ');
     const byExactName = await prisma.account.findFirst({
       where: {
         companyId,
-        name: accountName,
+        name: normalizedName,
         isActive: true,
       },
       select: { id: true, code: true, name: true },
     });
-    if (byExactName) return byExactName;
+    if (byExactName) {
+      return { account: byExactName, matchedBy: 'name' };
+    }
 
-    // Try case-insensitive
+    // Priority 4: Try case-insensitive match
     const byName = await prisma.account.findFirst({
       where: {
         companyId,
-        name: { equals: accountName, mode: 'insensitive' },
+        name: { equals: normalizedName, mode: 'insensitive' },
         isActive: true,
       },
       select: { id: true, code: true, name: true },
     });
-    if (byName) return byName;
+    if (byName) {
+      return { account: byName, matchedBy: 'name' };
+    }
   }
 
-  return null;
+  return { account: null, matchedBy: 'none' };
+}
+
+/**
+ * Determine account type from code prefix
+ */
+export function getAccountTypeFromCode(code: string): AccountType {
+  const firstChar = code.trim().charAt(0);
+  switch (firstChar) {
+    case '1':
+      return AccountType.ASSET;
+    case '2':
+      return AccountType.LIABILITY;
+    case '3':
+      return AccountType.EQUITY;
+    case '4':
+      return AccountType.INCOME;
+    case '5':
+    case '6':
+      return AccountType.EXPENSE;
+    default:
+      return AccountType.EXPENSE;
+  }
+}
+
+/**
+ * Auto-create missing accounts
+ * Returns created accounts and updates account cache
+ */
+export async function autoCreateMissingAccounts(
+  companyId: string,
+  unresolvedAccounts: Array<{ accountCode?: string | null; accountName?: string | null }>,
+  accountCache: Map<string, { account: { id: string; code: string; name: string } | null; matchedBy: 'id' | 'code' | 'name' | 'none' }>
+): Promise<{
+  created: Array<{ id: string; code: string; name: string }>;
+  errors: string[];
+}> {
+  const created: Array<{ id: string; code: string; name: string }> = [];
+  const errors: string[] = [];
+
+  // Get distinct unresolved accounts
+  const toCreate = new Map<string, { accountCode?: string | null; accountName?: string | null }>();
+  
+  for (const acc of unresolvedAccounts) {
+    const key = acc.accountCode || acc.accountName || '';
+    if (key && !toCreate.has(key)) {
+      // Check if it already exists (maybe was created in a previous iteration)
+      const existing = accountCache.get(key);
+      if (!existing || !existing.account) {
+        toCreate.set(key, acc);
+      }
+    }
+  }
+
+  // Create accounts
+  for (const [key, acc] of toCreate.entries()) {
+    try {
+      // Determine code and name
+      const accountCode = acc.accountCode || key;
+      const accountName = acc.accountName || key;
+
+      // Check if account already exists (double-check)
+      const existing = await prisma.account.findFirst({
+        where: {
+          companyId,
+          OR: [
+            { code: accountCode },
+            { name: accountName },
+          ],
+        },
+      });
+
+      if (existing) {
+        // Account exists, update cache
+        accountCache.set(key, {
+          account: { id: existing.id, code: existing.code, name: existing.name },
+          matchedBy: existing.code === accountCode ? 'code' : 'name',
+        });
+        continue;
+      }
+
+      // Determine account type from code prefix
+      const accountType = getAccountTypeFromCode(accountCode);
+
+      // Create account
+      const newAccount = await prisma.account.create({
+        data: {
+          companyId,
+          code: accountCode,
+          name: accountName,
+          type: accountType,
+          isActive: true,
+        },
+        select: { id: true, code: true, name: true },
+      });
+
+      created.push(newAccount);
+
+      // Update cache
+      accountCache.set(key, {
+        account: newAccount,
+        matchedBy: 'code',
+      });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      errors.push(`Failed to create account ${acc.accountCode || acc.accountName}: ${errorMsg}`);
+    }
+  }
+
+  return { created, errors };
 }
 
 /**
@@ -227,27 +366,41 @@ export async function parseAndValidateVouchers(
   const warnings: Array<{ voucherKey: string; message: string }> = [];
   const unresolvedAccounts: Array<{ accountCode?: string; accountName?: string; rowIndex: number }> = [];
 
-  // Get all unique account codes/names for batch resolution
-  const accountLookups = new Map<string, { accountCode?: string; accountName?: string }>();
+  // Get all unique account values for batch resolution
+  const accountLookups = new Map<
+    string,
+    { accountId?: string; accountCode?: string; accountName?: string }
+  >();
   for (const row of rows) {
     const accountValue = row[options.accountColumn];
     if (accountValue) {
       const key = String(accountValue).trim();
       if (!accountLookups.has(key)) {
-        // Try to determine if it's a code or name (codes are usually shorter/alphanumeric)
-        const isLikelyCode = /^[A-Z0-9-]+$/i.test(key) && key.length <= 20;
+        // Try to determine if it's an ID, code, or name
+        // IDs are usually UUIDs or CUIDs
+        const isLikelyId = /^[a-z0-9]{20,}$/i.test(key);
+        const isLikelyCode = /^[A-Z0-9-]+$/i.test(key) && key.length <= 20 && !isLikelyId;
         accountLookups.set(key, {
+          accountId: isLikelyId ? key : undefined,
           accountCode: isLikelyCode ? key : undefined,
-          accountName: isLikelyCode ? undefined : key,
+          accountName: !isLikelyId && !isLikelyCode ? key : undefined,
         });
       }
     }
   }
 
   // Batch resolve accounts
-  const accountCache = new Map<string, { id: string; code: string; name: string } | null>();
+  const accountCache = new Map<
+    string,
+    { account: { id: string; code: string; name: string } | null; matchedBy: 'id' | 'code' | 'name' | 'none' }
+  >();
   for (const [key, lookup] of accountLookups.entries()) {
-    const resolved = await resolveAccount(companyId, lookup.accountCode, lookup.accountName);
+    const resolved = await resolveAccount(
+      companyId,
+      lookup.accountId,
+      lookup.accountCode,
+      lookup.accountName
+    );
     accountCache.set(key, resolved);
   }
 
@@ -279,10 +432,11 @@ export async function parseAndValidateVouchers(
       ? String(firstRow[options.vendorColumn])
       : undefined;
 
-    // Parse lines
+    // Parse lines - NEVER drop lines, keep all even if account is unresolved
     const lines: VoucherGroup['lines'] = [];
     let totalDebit = 0;
     let totalCredit = 0;
+    const parsedLineCount = groupRows.length;
 
     for (let i = 0; i < groupRows.length; i++) {
       const row = groupRows[i];
@@ -290,41 +444,54 @@ export async function parseAndValidateVouchers(
       const debit = parseNumber(row[options.debitColumn]);
       const credit = parseNumber(row[options.creditColumn]);
 
-      // Validate debit/credit
+      // Validate debit/credit - this is a blocking error
       if (debit > 0 && credit > 0) {
         voucherErrors.push(`Row ${i + 1}: Both debit and credit cannot be greater than 0`);
       }
 
+      // Always compute totals from parsed values
+      totalDebit += debit;
+      totalCredit += credit;
+
       // Resolve account
-      const account = accountCache.get(accountValue);
-      if (!account) {
+      const accountResult = accountCache.get(accountValue);
+      const resolvedAccount = accountResult?.account || null;
+      const matchedBy = accountResult?.matchedBy || 'none';
+
+      // Determine raw account code/name for display
+      const isLikelyCode = /^[A-Z0-9-]+$/i.test(accountValue) && accountValue.length <= 20;
+      const rawAccountCode = isLikelyCode ? accountValue : null;
+      const rawAccountName = !isLikelyCode ? accountValue : null;
+
+      // If account not resolved, add error but keep the line
+      if (!resolvedAccount) {
         voucherErrors.push(`Row ${i + 1}: Account not found: ${accountValue}`);
         unresolvedAccounts.push({
-          accountCode: /^[A-Z0-9-]+$/i.test(accountValue) && accountValue.length <= 20 ? accountValue : undefined,
-          accountName: /^[A-Z0-9-]+$/i.test(accountValue) && accountValue.length <= 20 ? undefined : accountValue,
+          accountCode: rawAccountCode,
+          accountName: rawAccountName,
           rowIndex: rows.indexOf(row),
         });
-        continue;
       }
 
       const description = options.lineMemoColumn && row[options.lineMemoColumn]
         ? String(row[options.lineMemoColumn])
         : undefined;
 
+      // Always add the line, even if account is unresolved
       lines.push({
-        accountId: account.id,
-        accountCode: account.code,
-        accountName: account.name,
+        accountId: resolvedAccount?.id || null,
+        accountCode: resolvedAccount?.code || null,
+        accountName: resolvedAccount?.name || null,
+        rawAccountCode: rawAccountCode || null,
+        rawAccountName: rawAccountName || null,
         debit,
         credit,
         description,
+        matchedBy,
       });
-
-      totalDebit += debit;
-      totalCredit += credit;
     }
 
-    // Validate balance
+    // Validate balance - compute from all parsed lines
     const difference = Math.abs(totalDebit - totalCredit);
     if (difference >= 0.01) {
       voucherErrors.push(
@@ -332,7 +499,8 @@ export async function parseAndValidateVouchers(
       );
     }
 
-    if (lines.length < 2) {
+    // Validate line count based on parsed rows, not resolved lines
+    if (parsedLineCount < 2) {
       voucherErrors.push('Voucher must have at least 2 lines');
     }
 
@@ -353,6 +521,7 @@ export async function parseAndValidateVouchers(
       },
       errors: voucherErrors,
       warnings: voucherWarnings,
+      parsedLineCount,
     });
 
     // Collect errors and warnings
