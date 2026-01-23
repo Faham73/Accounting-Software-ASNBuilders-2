@@ -45,6 +45,21 @@ export default async function VoucherDetailPage({ params }: { params: { id: stri
         },
         orderBy: { createdAt: 'asc' },
       },
+      allocations: {
+        include: {
+          sourceLine: {
+            include: {
+              voucher: {
+                select: { id: true, voucherNo: true, date: true },
+              },
+              account: {
+                select: { id: true, code: true, name: true },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   });
 

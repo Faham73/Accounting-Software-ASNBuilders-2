@@ -355,7 +355,14 @@ export default function VendorsList({ initialVendors, canWrite }: VendorsListPro
                   ) : (
                     <>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{vendor.name}</div>
+                        <div className="text-sm font-medium text-gray-900">
+                          <a
+                            href={`/dashboard/vendors/${vendor.id}/ledger`}
+                            className="text-blue-600 hover:text-blue-900 font-medium"
+                          >
+                            {vendor.name}
+                          </a>
+                        </div>
                         {vendor.notes && (
                           <div className="text-sm text-gray-500">{vendor.notes}</div>
                         )}

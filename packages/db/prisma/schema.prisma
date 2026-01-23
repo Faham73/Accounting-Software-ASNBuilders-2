@@ -225,6 +225,7 @@ model Voucher {
   companyId       String        @map("company_id")
   projectId       String?       @map("project_id")
   voucherNo       String        @map("voucher_no")
+  type            VoucherType?  @default(JOURNAL)
   date            DateTime
   status          VoucherStatus @default(DRAFT)
   narration       String?
@@ -234,15 +235,17 @@ model Voucher {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  company   Company       @relation(fields: [companyId], references: [id])
-  project   Project?      @relation(fields: [projectId], references: [id])
-  createdBy User          @relation("VoucherCreator", fields: [createdByUserId], references: [id])
-  postedBy  User?         @relation("VoucherPoster", fields: [postedByUserId], references: [id])
-  lines     VoucherLine[]
+  company      Company            @relation(fields: [companyId], references: [id])
+  project      Project?           @relation(fields: [projectId], references: [id])
+  createdBy    User               @relation("VoucherCreator", fields: [createdByUserId], references: [id])
+  postedBy     User?              @relation("VoucherPoster", fields: [postedByUserId], references: [id])
+  lines        VoucherLine[]
+  allocations  VendorAllocation[] @relation("PaymentVoucher")
 
   @@unique([companyId, voucherNo])
   @@index([companyId, date])
   @@index([companyId, status])
+  @@index([companyId, type])
   @@map("vouchers")
 }
 
@@ -261,19 +264,22 @@ model VoucherLine {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  voucher       Voucher       @relation(fields: [voucherId], references: [id], onDelete: Cascade)
-  company       Company       @relation(fields: [companyId], references: [id])
-  account       Account       @relation(fields: [accountId], references: [id])
-  project       Project?      @relation(fields: [projectId], references: [id])
-  vendor        Vendor?       @relation(fields: [vendorId], references: [id])
-  costHead      CostHead?     @relation(fields: [costHeadId], references: [id])
-  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  voucher          Voucher            @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  company          Company            @relation(fields: [companyId], references: [id])
+  account          Account            @relation(fields: [accountId], references: [id])
+  project          Project?           @relation(fields: [projectId], references: [id])
+  vendor           Vendor?            @relation(fields: [vendorId], references: [id])
+  costHead         CostHead?          @relation(fields: [costHeadId], references: [id])
+  paymentMethod    PaymentMethod?     @relation(fields: [paymentMethodId], references: [id])
+  sourceAllocations VendorAllocation[] @relation("SourceLine")
 
   @@index([voucherId])
   @@index([companyId])
   @@index([accountId])
+  @@index([vendorId])
   @@index([companyId, projectId])
   @@index([companyId, projectId, voucherId])
+  @@index([companyId, vendorId])
   @@map("voucher_lines")
 }
 
@@ -293,6 +299,21 @@ model ProjectCostCategoryMap {
   @@index([companyId])
   @@index([companyId, category])
   @@map("project_cost_category_maps")
+}
+
+model VendorAllocation {
+  id               String   @id @default(cuid())
+  paymentVoucherId String   @map("payment_voucher_id")
+  sourceLineId     String   @map("source_line_id")
+  amount           Decimal  @db.Decimal(18, 2)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  paymentVoucher Voucher     @relation("PaymentVoucher", fields: [paymentVoucherId], references: [id], onDelete: Cascade)
+  sourceLine     VoucherLine @relation("SourceLine", fields: [sourceLineId], references: [id], onDelete: Cascade)
+
+  @@index([paymentVoucherId])
+  @@index([sourceLineId])
+  @@map("vendor_allocations")
 }
 
 model AuditLog {

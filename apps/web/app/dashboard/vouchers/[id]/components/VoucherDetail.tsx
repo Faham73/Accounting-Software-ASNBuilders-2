@@ -94,6 +94,10 @@ export default function VoucherDetail({ voucher, canEdit, canPost }: VoucherDeta
             </p>
           </div>
           <div>
+            <h3 className="text-sm font-medium text-gray-500">Type</h3>
+            <p className="mt-1 text-lg text-gray-900">{voucher.type || 'JOURNAL'}</p>
+          </div>
+          <div>
             <h3 className="text-sm font-medium text-gray-500">Status</h3>
             <p className="mt-1">
               <span
@@ -188,6 +192,74 @@ export default function VoucherDetail({ voucher, canEdit, canPost }: VoucherDeta
           </tfoot>
         </table>
       </div>
+
+      {/* Allocations (for Payment Vouchers) */}
+      {voucher.type === 'PAYMENT' && voucher.allocations && voucher.allocations.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden mt-6">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-medium text-gray-900">Payment Allocations</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              This payment voucher allocates amounts to the following vendor payable lines:
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source Voucher</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Allocated Amount</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {voucher.allocations.map((allocation: any, index: number) => (
+                  <tr key={index}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <a
+                        href={`/dashboard/vouchers/${allocation.sourceLine.voucher.id}`}
+                        className="text-blue-600 hover:text-blue-900 font-medium"
+                      >
+                        {allocation.sourceLine.voucher.voucherNo}
+                      </a>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(allocation.sourceLine.voucher.date).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {allocation.sourceLine.account.code} - {allocation.sourceLine.account.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-right">
+                      {new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: 'USD',
+                      }).format(Number(allocation.amount))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-gray-50">
+                <tr>
+                  <td colSpan={3} className="px-6 py-4 text-right font-medium text-gray-900">
+                    Total Allocated:
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right font-medium text-gray-900">
+                    {new Intl.NumberFormat('en-US', {
+                      style: 'currency',
+                      currency: 'USD',
+                    }).format(
+                      voucher.allocations.reduce(
+                        (sum: number, alloc: any) => sum + Number(alloc.amount),
+                        0
+                      )
+                    )}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Metadata */}
       <div className="mt-6 text-sm text-gray-500">

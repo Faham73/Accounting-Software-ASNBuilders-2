@@ -101,6 +101,20 @@ export default async function DashboardLayout({
                   Vouchers
                 </Link>
               )}
+              <Link
+                href="/dashboard/reports"
+                className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+              >
+                Reports
+              </Link>
+              {canReadVouchers && (
+                <Link
+                  href="/dashboard/reports/payables"
+                  className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-4"
+                >
+                  Payables
+                </Link>
+              )}
             </nav>
           </div>
           <div className="p-4 border-t border-gray-200">
