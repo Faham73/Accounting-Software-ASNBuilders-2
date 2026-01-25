@@ -103,7 +103,7 @@ export async function getAccountLedger(
       accountId,
       companyId,
       voucher: {
-        status: 'POSTED',
+        status: { in: ['POSTED', 'REVERSED'] },
         ...dateFilter.voucher,
       },
     },
@@ -154,7 +154,7 @@ export async function getAccountLedger(
         accountId,
         companyId,
         voucher: {
-          status: 'POSTED',
+          status: { in: ['POSTED', 'REVERSED'] },
           date: { lt: from },
         },
       },

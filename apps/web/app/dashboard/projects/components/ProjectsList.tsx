@@ -48,7 +48,7 @@ export default function ProjectsList({ initialProjects, canWrite }: ProjectsList
   }, [searchQuery, statusFilter, activeFilter]);
 
   const handleArchive = async (id: string) => {
-    if (!confirm('Are you sure you want to archive this project?')) return;
+    if (!confirm('Are you sure you want to delete this project?')) return;
 
     try {
       const response = await fetch(`/api/projects/${id}`, {
@@ -60,10 +60,10 @@ export default function ProjectsList({ initialProjects, canWrite }: ProjectsList
       if (data.ok) {
         fetchProjects();
       } else {
-        alert(data.error || 'Failed to archive project');
+        alert(data.error || 'Failed to delete project');
       }
     } catch (error) {
-      alert('An error occurred while archiving the project');
+      alert('An error occurred while deleting the project');
     }
   };
 
@@ -134,42 +134,108 @@ export default function ProjectsList({ initialProjects, canWrite }: ProjectsList
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  SN
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Client
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Main
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Sub
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Entries
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Project
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Project Address
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Project Manager
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Project Engineer
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Company Site Name
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Reference
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Files
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Contract Value
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Active
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Action
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {projects.map((project) => (
+              {projects.map((project, index) => (
                 <tr key={project.id}>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {index + 1}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    {project.isMain ? (
+                      <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                        Main
+                      </span>
+                    ) : (
+                      <span className="text-sm text-gray-400">-</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {project.parentProject ? (
+                      <span className="text-xs text-gray-600">{project.parentProject.name}</span>
+                    ) : project.parentProjectId ? (
+                      <span className="text-xs text-gray-500">Sub</span>
+                    ) : (
+                      <span className="text-sm text-gray-400">-</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {project.entriesCount ?? 0}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">{project.name}</div>
-                    {project.siteLocation && (
-                      <div className="text-sm text-gray-500">{project.siteLocation}</div>
-                    )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{project.clientName || '-'}</div>
-                    {project.clientContact && (
-                      <div className="text-sm text-gray-500">{project.clientContact}</div>
-                    )}
+                  <td className="px-4 py-4 text-sm text-gray-900">
+                    {project.address || <span className="text-gray-400">-</span>}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {project.projectManager || <span className="text-gray-400">-</span>}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {project.projectEngineer || <span className="text-gray-400">-</span>}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {project.companySiteName || <span className="text-gray-400">-</span>}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {project.reference || <span className="text-gray-400">-</span>}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-gray-900">
+                        {project.filesCount ?? 0} {project.filesCount === 1 ? 'file' : 'files'}
+                      </span>
+                      {canWrite && (
+                        <Link
+                          href={`/dashboard/projects/${project.id}#files`}
+                          className="text-blue-600 hover:text-blue-900 text-xs"
+                        >
+                          View
+                        </Link>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap">
                     <span
                       className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeColor(
                         project.status
@@ -178,31 +244,18 @@ export default function ProjectsList({ initialProjects, canWrite }: ProjectsList
                       {project.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {project.contractValue
-                      ? new Intl.NumberFormat('en-US', {
-                          style: 'currency',
-                          currency: 'USD',
-                        }).format(Number(project.contractValue))
-                      : '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        project.isActive
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      {project.isActive ? 'Active' : 'Archived'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                    {canWrite && (
+                  <td className="px-4 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                    {canWrite ? (
                       <>
                         <Link
                           href={`/dashboard/projects/${project.id}`}
                           className="text-blue-600 hover:text-blue-900"
+                        >
+                          View
+                        </Link>
+                        <Link
+                          href={`/dashboard/projects/${project.id}`}
+                          className="text-indigo-600 hover:text-indigo-900"
                         >
                           Edit
                         </Link>
@@ -210,11 +263,17 @@ export default function ProjectsList({ initialProjects, canWrite }: ProjectsList
                           onClick={() => handleArchive(project.id)}
                           className="text-red-600 hover:text-red-900"
                         >
-                          Archive
+                          Delete
                         </button>
                       </>
+                    ) : (
+                      <Link
+                        href={`/dashboard/projects/${project.id}`}
+                        className="text-blue-600 hover:text-blue-900"
+                      >
+                        View
+                      </Link>
                     )}
-                    {!canWrite && <span className="text-gray-400">View Only</span>}
                   </td>
                 </tr>
               ))}

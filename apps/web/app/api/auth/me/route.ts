@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, createErrorResponse, UnauthorizedError } from '@/lib/rbac';
 
 export async function GET(request: NextRequest) {

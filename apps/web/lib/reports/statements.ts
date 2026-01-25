@@ -109,7 +109,7 @@ export async function getTrialBalance(
     where: {
       companyId,
       voucher: {
-        status: 'POSTED',
+        status: { in: ['POSTED', 'REVERSED'] },
         date: { lte: asOf },
       },
     },
@@ -203,7 +203,7 @@ export async function getProfitAndLoss(
         type: { in: ['INCOME', 'EXPENSE'] },
       },
       voucher: {
-        status: 'POSTED',
+        status: { in: ['POSTED', 'REVERSED'] },
         date: { gte: from, lte: to },
       },
     },
@@ -304,7 +304,7 @@ export async function getBalanceSheet(
         type: { in: ['ASSET', 'LIABILITY', 'EQUITY'] },
       },
       voucher: {
-        status: 'POSTED',
+        status: { in: ['POSTED', 'REVERSED'] },
         date: { lte: asOf },
       },
     },
@@ -415,7 +415,7 @@ export async function getProjectProfitability(
       type: { in: ['INCOME', 'EXPENSE'] },
     },
     voucher: {
-      status: 'POSTED',
+      status: { in: ['POSTED', 'REVERSED'] },
       date: { gte: from, lte: to },
     },
   };

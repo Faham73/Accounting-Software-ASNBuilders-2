@@ -1,32 +1,81 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Project } from '../../components/types';
 import AttachmentUploader from './AttachmentUploader';
+
+/**
+ * Normalize date-like values to YYYY-MM-DD for <input type="date">.
+ * Handles string (ISO or YYYY-MM-DD), Date, null, undefined.
+ */
+function toDateInputValue(input: unknown): string {
+  if (input == null) return '';
+  if (typeof input === 'string') {
+    if (!input) return '';
+    if (input.includes('T')) return input.split('T')[0];
+    return input.slice(0, 10);
+  }
+  if (input instanceof Date) {
+    if (Number.isNaN(input.getTime())) return '';
+    return input.toISOString().slice(0, 10);
+  }
+  return '';
+}
 
 interface ProjectFormProps {
   project?: Project;
   onDuplicate?: () => void;
 }
 
+interface MainProject {
+  id: string;
+  name: string;
+}
+
 export default function ProjectForm({ project, onDuplicate }: ProjectFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mainProjects, setMainProjects] = useState<MainProject[]>([]);
 
   const [formData, setFormData] = useState({
     name: project?.name || '',
     clientName: project?.clientName || '',
     clientContact: project?.clientContact || '',
     siteLocation: project?.siteLocation || '',
-    startDate: project?.startDate ? project.startDate.split('T')[0] : '',
-    expectedEndDate: project?.expectedEndDate ? project.expectedEndDate.split('T')[0] : '',
+    startDate: toDateInputValue(project?.startDate),
+    expectedEndDate: toDateInputValue(project?.expectedEndDate),
     contractValue: project?.contractValue?.toString() || '',
     status: project?.status || 'DRAFT',
     assignedManager: project?.assignedManager || '',
     isActive: project?.isActive ?? true,
+    // New fields
+    address: project?.address || '',
+    projectManager: project?.projectManager || '',
+    projectEngineer: project?.projectEngineer || '',
+    companySiteName: project?.companySiteName || '',
+    reference: project?.reference || '',
+    isMain: project?.isMain ?? false,
+    parentProjectId: project?.parentProjectId || '',
   });
+
+  // Fetch main projects for parent project dropdown
+  useEffect(() => {
+    const fetchMainProjects = async () => {
+      try {
+        const response = await fetch('/api/projects?status=all&active=all');
+        const data = await response.json();
+        if (data.ok) {
+          const mainProjectsList = data.data.filter((p: Project) => p.isMain && p.id !== project?.id);
+          setMainProjects(mainProjectsList);
+        }
+      } catch {
+        // Silently ignore fetch errors; main projects dropdown may be empty
+      }
+    };
+    fetchMainProjects();
+  }, [project?.id]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -45,6 +94,14 @@ export default function ProjectForm({ project, onDuplicate }: ProjectFormProps) 
         status: formData.status,
         assignedManager: formData.assignedManager || null,
         isActive: formData.isActive,
+        // New fields
+        address: formData.address || null,
+        projectManager: formData.projectManager || null,
+        projectEngineer: formData.projectEngineer || null,
+        companySiteName: formData.companySiteName || null,
+        reference: formData.reference || null,
+        isMain: formData.isMain,
+        parentProjectId: formData.isMain ? null : (formData.parentProjectId || null),
       };
 
       const url = project ? `/api/projects/${project.id}` : '/api/projects';
@@ -207,6 +264,112 @@ export default function ProjectForm({ project, onDuplicate }: ProjectFormProps) 
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
           />
         </div>
+
+        <div>
+          <label htmlFor="address" className="block text-sm font-medium text-gray-700">
+            Project Address
+          </label>
+          <input
+            type="text"
+            id="address"
+            value={formData.address}
+            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="projectManager" className="block text-sm font-medium text-gray-700">
+            Project Manager
+          </label>
+          <input
+            type="text"
+            id="projectManager"
+            value={formData.projectManager}
+            onChange={(e) => setFormData({ ...formData, projectManager: e.target.value })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="projectEngineer" className="block text-sm font-medium text-gray-700">
+            Project Engineer
+          </label>
+          <input
+            type="text"
+            id="projectEngineer"
+            value={formData.projectEngineer}
+            onChange={(e) => setFormData({ ...formData, projectEngineer: e.target.value })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="companySiteName" className="block text-sm font-medium text-gray-700">
+            Company Site Name
+          </label>
+          <input
+            type="text"
+            id="companySiteName"
+            value={formData.companySiteName}
+            onChange={(e) => setFormData({ ...formData, companySiteName: e.target.value })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="reference" className="block text-sm font-medium text-gray-700">
+            Reference
+          </label>
+          <input
+            type="text"
+            id="reference"
+            value={formData.reference}
+            onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          />
+        </div>
+
+        <div className="flex items-center">
+          <input
+            type="checkbox"
+            id="isMain"
+            checked={formData.isMain}
+            onChange={(e) => {
+              const isMain = e.target.checked;
+              setFormData({
+                ...formData,
+                isMain,
+                parentProjectId: isMain ? '' : formData.parentProjectId, // Clear parent if main
+              });
+            }}
+            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+          />
+          <label htmlFor="isMain" className="ml-2 block text-sm text-gray-900">
+            Is Main Project
+          </label>
+        </div>
+
+        {!formData.isMain && (
+          <div>
+            <label htmlFor="parentProjectId" className="block text-sm font-medium text-gray-700">
+              Parent Project
+            </label>
+            <select
+              id="parentProjectId"
+              value={formData.parentProjectId}
+              onChange={(e) => setFormData({ ...formData, parentProjectId: e.target.value })}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+            >
+              <option value="">Select a main project...</option>
+              {mainProjects.map((mainProject) => (
+                <option key={mainProject.id} value={mainProject.id}>
+                  {mainProject.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="flex items-center">
           <input

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toMoney } from '@/lib/payables';
 
@@ -40,6 +40,50 @@ export default function VendorLedgerClient({
   canCreatePayment,
 }: VendorLedgerClientProps) {
   const router = useRouter();
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  // Set default to current month
+  useEffect(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const from = new Date(year, month, 1);
+    const to = new Date(year, month + 1, 0);
+    setDateFrom(from.toISOString().split('T')[0]);
+    setDateTo(to.toISOString().split('T')[0]);
+  }, []);
+
+  const handlePrint = () => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.append('from', dateFrom);
+    if (dateTo) params.append('to', dateTo);
+    window.open(`/print/vendors/${vendorId}/statement?${params.toString()}`, '_blank');
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('id', vendorId);
+      if (dateFrom) params.append('from', dateFrom);
+      if (dateTo) params.append('to', dateTo);
+      const response = await fetch(`/api/pdf/vendor-statement?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vendor-statement-${vendor.name}-${dateFrom || 'all'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      alert('An error occurred while generating the PDF');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -60,6 +104,38 @@ export default function VendorLedgerClient({
                 Create Payment
               </a>
             )}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={handlePrint}
+                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 inline-flex items-center gap-2"
+              >
+                <span>🖨️</span> Print Statement
+              </button>
+              <button
+                onClick={handleDownloadPDF}
+                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 inline-flex items-center gap-2"
+              >
+                <span>📄</span> PDF
+              </button>
+            </div>
+            <div className="mb-2 text-sm">
+              <label className="block text-xs text-gray-500 mb-1">Date Range:</label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="text-xs border border-gray-300 rounded px-2 py-1"
+                />
+                <span className="self-center text-xs">to</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="text-xs border border-gray-300 rounded px-2 py-1"
+                />
+              </div>
+            </div>
             <div className="space-y-1">
               <div>
                 <span className="text-sm text-gray-500">GL Balance:</span>

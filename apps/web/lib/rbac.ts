@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { UserRole } from '@accounting/db';
 import { getAuthUser, AuthUserWithDetails, verifyToken } from '@/lib/auth';
 import { prisma } from '@accounting/db';
-import { can, Resource, Action } from '@/lib/permissions';
+import { can, Resource, Action, UserRole } from '@/lib/permissions';
 
 /**
  * Authentication result from requireAuth

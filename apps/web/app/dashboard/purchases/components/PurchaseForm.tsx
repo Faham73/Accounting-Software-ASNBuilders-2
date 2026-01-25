@@ -1,0 +1,837 @@
+'use client';
+
+import { useState, FormEvent, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+interface PurchaseLine {
+  id?: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+interface PurchaseAttachment {
+  fileName: string;
+  fileUrl: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+interface Purchase {
+  id: string;
+  date: string;
+  challanNo: string | null;
+  projectId: string;
+  subProjectId: string | null;
+  supplierVendorId: string;
+  warehouseId: string;
+  reference: string | null;
+  discountPercent: number | null;
+  paidAmount: number;
+  paymentAccountId: string | null;
+  lines: Array<{
+    id: string;
+    productId: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+    product: { id: string; name: string; unit: string };
+  }>;
+  attachments: PurchaseAttachment[];
+}
+
+interface PurchaseFormProps {
+  purchase?: Purchase;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  isMain: boolean;
+  parentProjectId: string | null;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  unit: string;
+}
+
+interface Vendor {
+  id: string;
+  name: string;
+}
+
+interface Warehouse {
+  id: string;
+  name: string;
+  type: string;
+}
+
+interface Account {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+}
+
+function toDateInputValue(input: unknown): string {
+  if (input == null) return '';
+  if (typeof input === 'string') {
+    if (!input) return '';
+    if (input.includes('T')) return input.split('T')[0];
+    return input.slice(0, 10);
+  }
+  if (input instanceof Date) {
+    if (Number.isNaN(input.getTime())) return '';
+    return input.toISOString().slice(0, 10);
+  }
+  return '';
+}
+
+export default function PurchaseForm({ purchase }: PurchaseFormProps) {
+  const router = useRouter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [subProjects, setSubProjects] = useState<Project[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [showWarehouseModal, setShowWarehouseModal] = useState(false);
+  const [newWarehouse, setNewWarehouse] = useState({ name: '', type: 'LOCAL' as 'LOCAL' | 'COMPANY' });
+  const [isCreatingWarehouse, setIsCreatingWarehouse] = useState(false);
+
+  const [formData, setFormData] = useState({
+    date: toDateInputValue(purchase?.date || new Date()),
+    challanNo: purchase?.challanNo || '',
+    projectId: purchase?.projectId || '',
+    subProjectId: purchase?.subProjectId || '',
+    supplierVendorId: purchase?.supplierVendorId || '',
+    warehouseId: purchase?.warehouseId || '',
+    reference: purchase?.reference || '',
+    discountPercent: purchase?.discountPercent?.toString() || '',
+    paidAmount: purchase?.paidAmount?.toString() || '0',
+    paymentAccountId: purchase?.paymentAccountId || '',
+  });
+
+  const [lines, setLines] = useState<PurchaseLine[]>(
+    purchase?.lines.map((l) => ({
+      id: l.id,
+      productId: l.productId,
+      quantity: Number(l.quantity),
+      unitPrice: Number(l.unitPrice),
+      lineTotal: Number(l.lineTotal),
+    })) || []
+  );
+
+  const [attachments, setAttachments] = useState<PurchaseAttachment[]>(
+    purchase?.attachments || []
+  );
+
+  // Fetch dropdown data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [projectsRes, productsRes, vendorsRes, warehousesRes, accountsRes] = await Promise.all([
+          fetch('/api/projects?status=all&active=all'),
+          fetch('/api/products'),
+          fetch('/api/vendors'),
+          fetch('/api/warehouses'),
+          fetch('/api/chart-of-accounts?active=true'),
+        ]);
+
+        const [projectsData, productsData, vendorsData, warehousesData, accountsData] = await Promise.all([
+          projectsRes.json(),
+          productsRes.json(),
+          vendorsRes.json(),
+          warehousesRes.json(),
+          accountsRes.json(),
+        ]);
+
+        if (projectsData.ok) {
+          const mainProjects = projectsData.data.filter((p: Project) => p.isMain);
+          setProjects(mainProjects);
+          if (formData.projectId) {
+            const subs = projectsData.data.filter(
+              (p: Project) => p.parentProjectId === formData.projectId
+            );
+            setSubProjects(subs);
+          }
+        } else {
+          console.error('Failed to fetch projects:', projectsData);
+        }
+
+        if (productsData.ok) setProducts(productsData.data);
+        if (vendorsData.ok) setVendors(vendorsData.data);
+        if (warehousesData.ok) {
+          setWarehouses(warehousesData.data);
+        } else {
+          console.error('Failed to fetch warehouses:', warehousesData);
+        }
+        if (accountsData.ok) {
+          // Filter to leaf accounts (accounts that don't have children)
+          // We'll need to check if any other account has this as parent
+          const allAccounts = accountsData.data;
+          const accountIds = new Set(allAccounts.map((a: Account) => a.id));
+          const parentIds = new Set(allAccounts.map((a: Account & { parentId?: string }) => a.parentId).filter(Boolean));
+          const leafAccounts = allAccounts.filter((a: Account) => !parentIds.has(a.id));
+          setAccounts(leafAccounts);
+        }
+      } catch (err) {
+        console.error('Failed to fetch dropdown data:', err);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Handle warehouse creation
+  const handleCreateWarehouse = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsCreatingWarehouse(true);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/warehouses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newWarehouse),
+      });
+
+      const data = await res.json();
+
+      if (data.ok) {
+        // Refresh warehouses list
+        const warehousesRes = await fetch('/api/warehouses');
+        const warehousesData = await warehousesRes.json();
+        if (warehousesData.ok) {
+          setWarehouses(warehousesData.data);
+        }
+        // Select the newly created warehouse
+        setFormData((prev) => ({ ...prev, warehouseId: data.data.id }));
+        // Close modal and reset form
+        setShowWarehouseModal(false);
+        setNewWarehouse({ name: '', type: 'LOCAL' });
+      } else {
+        setError(data.error || 'Failed to create warehouse');
+      }
+    } catch (err) {
+      setError('Failed to create warehouse');
+      console.error(err);
+    } finally {
+      setIsCreatingWarehouse(false);
+    }
+  };
+
+  // Update sub-projects when main project changes
+  useEffect(() => {
+    const fetchSubProjects = async () => {
+      if (!formData.projectId) {
+        setSubProjects([]);
+        setFormData((prev) => ({ ...prev, subProjectId: '' }));
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/projects?status=all&active=all');
+        const data = await response.json();
+        if (data.ok) {
+          const subs = data.data.filter(
+            (p: Project) => p.parentProjectId === formData.projectId
+          );
+          setSubProjects(subs);
+          // Clear sub-project if it's not a child of the new main project
+          if (formData.subProjectId && !subs.find((p: Project) => p.id === formData.subProjectId)) {
+            setFormData((prev) => ({ ...prev, subProjectId: '' }));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch sub-projects:', err);
+      }
+    };
+
+    fetchSubProjects();
+  }, [formData.projectId]);
+
+  const addLine = () => {
+    setLines([
+      ...lines,
+      {
+        productId: '',
+        quantity: 0,
+        unitPrice: 0,
+        lineTotal: 0,
+      },
+    ]);
+  };
+
+  const removeLine = (index: number) => {
+    setLines(lines.filter((_, i) => i !== index));
+  };
+
+  const updateLine = (index: number, field: keyof PurchaseLine, value: any) => {
+    const newLines = [...lines];
+    newLines[index] = { ...newLines[index], [field]: value };
+
+    // Recalculate line total
+    if (field === 'quantity' || field === 'unitPrice') {
+      const quantity = field === 'quantity' ? value : newLines[index].quantity;
+      const unitPrice = field === 'unitPrice' ? value : newLines[index].unitPrice;
+      newLines[index].lineTotal = quantity * unitPrice;
+    }
+
+    setLines(newLines);
+  };
+
+  const calculateTotals = () => {
+    const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
+    const discount = formData.discountPercent
+      ? (subtotal * parseFloat(formData.discountPercent)) / 100
+      : 0;
+    const total = subtotal - discount;
+    const paid = parseFloat(formData.paidAmount) || 0;
+    const due = total - paid;
+
+    return { subtotal, discount, total, paid, due };
+  };
+
+  const handleFileUpload = async (file: File) => {
+    // For now, we'll create a placeholder URL
+    // In production, you'd upload to S3 or your file storage
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      // If you have an upload endpoint, use it here
+      // For now, create a mock attachment
+      const attachment: PurchaseAttachment = {
+        fileName: file.name,
+        fileUrl: URL.createObjectURL(file), // Temporary URL
+        mimeType: file.type,
+        sizeBytes: file.size,
+      };
+
+      setAttachments([...attachments, attachment]);
+    } catch (err) {
+      console.error('File upload failed:', err);
+      alert('Failed to upload file');
+    }
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(attachments.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    // Validation
+    if (!formData.projectId) {
+      setError('Main project is required');
+      return;
+    }
+    if (!formData.supplierVendorId) {
+      setError('Vendor is required');
+      return;
+    }
+    if (!formData.warehouseId) {
+      setError('Warehouse is required');
+      return;
+    }
+    if (lines.length === 0) {
+      setError('At least one product line is required');
+      return;
+    }
+
+    for (const line of lines) {
+      if (!line.productId) {
+        setError('Product is required for all lines');
+        return;
+      }
+      if (line.quantity <= 0) {
+        setError('Quantity must be greater than 0');
+        return;
+      }
+      if (line.unitPrice < 0) {
+        setError('Unit price must be non-negative');
+        return;
+      }
+    }
+
+    const { total, paid } = calculateTotals();
+    if (paid > total) {
+      setError('Paid amount cannot exceed total amount');
+      return;
+    }
+
+    // Validate payment account is required when paid amount > 0
+    if (paid > 0 && !formData.paymentAccountId) {
+      setError('Payment account is required when paid amount > 0');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const payload = {
+        date: formData.date,
+        challanNo: formData.challanNo || null,
+        projectId: formData.projectId,
+        subProjectId: formData.subProjectId || null,
+        supplierVendorId: formData.supplierVendorId,
+        warehouseId: formData.warehouseId,
+        reference: formData.reference || null,
+        discountPercent: formData.discountPercent ? parseFloat(formData.discountPercent) : null,
+        paidAmount: parseFloat(formData.paidAmount) || 0,
+        paymentAccountId: formData.paymentAccountId || null,
+        lines: lines.map((line) => ({
+          productId: line.productId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          lineTotal: line.lineTotal,
+        })),
+        attachments: attachments,
+      };
+
+      const url = purchase ? `/api/purchases/${purchase.id}` : '/api/purchases';
+      const method = purchase ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (data.ok) {
+        router.push('/dashboard/purchases');
+        router.refresh();
+      } else {
+        setError(data.error || 'Failed to save purchase');
+      }
+    } catch (err) {
+      setError('An error occurred while saving the purchase');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const { subtotal, discount, total, paid, due } = calculateTotals();
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          {error}
+        </div>
+      )}
+
+      {/* Header Fields */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Date *</label>
+          <input
+            type="date"
+            required
+            value={formData.date}
+            onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Challan Number</label>
+          <input
+            type="text"
+            value={formData.challanNo}
+            onChange={(e) => setFormData({ ...formData, challanNo: e.target.value })}
+            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Main Project *</label>
+          <select
+            required
+            value={formData.projectId}
+            onChange={(e) => setFormData({ ...formData, projectId: e.target.value, subProjectId: '' })}
+            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Select project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          {projects.length === 0 && (
+            <p className="mt-1 text-xs text-gray-500">No main projects found. Please create a main project first.</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Sub Project</label>
+          <select
+            value={formData.subProjectId}
+            onChange={(e) => setFormData({ ...formData, subProjectId: e.target.value })}
+            disabled={!formData.projectId || subProjects.length === 0}
+            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+          >
+            <option value="">None</option>
+            {subProjects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Vendor *</label>
+          <select
+            required
+            value={formData.supplierVendorId}
+            onChange={(e) => setFormData({ ...formData, supplierVendorId: e.target.value })}
+            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Select vendor</option>
+            {vendors.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-medium text-gray-700">Warehouse/Company *</label>
+            <button
+              type="button"
+              onClick={() => setShowWarehouseModal(true)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              + Add Warehouse
+            </button>
+          </div>
+          <select
+            required
+            value={formData.warehouseId}
+            onChange={(e) => setFormData({ ...formData, warehouseId: e.target.value })}
+            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Select warehouse</option>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name} ({w.type})
+              </option>
+            ))}
+          </select>
+          {warehouses.length === 0 && (
+            <p className="mt-1 text-xs text-gray-500">No warehouses found. Click "+ Add Warehouse" to create one.</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Reference</label>
+          <input
+            type="text"
+            value={formData.reference}
+            onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
+            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+
+      {/* Product Lines */}
+      <div>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium">Product Lines</h3>
+          <button
+            type="button"
+            onClick={addLine}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          >
+            Add Product
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Price</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {lines.map((line, index) => (
+                <tr key={index}>
+                  <td className="px-6 py-4">
+                    <select
+                      required
+                      value={line.productId}
+                      onChange={(e) => updateLine(index, 'productId', e.target.value)}
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select product</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.unit})
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-6 py-4">
+                    <input
+                      type="number"
+                      required
+                      min="0.001"
+                      step="0.001"
+                      value={line.quantity || ''}
+                      onChange={(e) => updateLine(index, 'quantity', parseFloat(e.target.value) || 0)}
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </td>
+                  <td className="px-6 py-4">
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="0.01"
+                      value={line.unitPrice || ''}
+                      onChange={(e) => updateLine(index, 'unitPrice', parseFloat(e.target.value) || 0)}
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </td>
+                  <td className="px-6 py-4">
+                    <input
+                      type="number"
+                      readOnly
+                      value={line.lineTotal.toFixed(2)}
+                      className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-gray-900 shadow-sm"
+                    />
+                  </td>
+                  <td className="px-6 py-4">
+                    <button
+                      type="button"
+                      onClick={() => removeLine(index)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Discount (%)</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={formData.discountPercent}
+              onChange={(e) => setFormData({ ...formData, discountPercent: e.target.value })}
+              className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Total Price</label>
+            <input
+              type="text"
+              readOnly
+              value={total.toFixed(2)}
+              className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 shadow-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Paid Amount</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={formData.paidAmount}
+              onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value })}
+              className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Due Amount</label>
+            <input
+              type="text"
+              readOnly
+              value={due.toFixed(2)}
+              className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 shadow-sm"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Account Type + Account Number
+              {parseFloat(formData.paidAmount) > 0 && <span className="text-red-500"> *</span>}
+            </label>
+            <select
+              value={formData.paymentAccountId}
+              onChange={(e) => setFormData({ ...formData, paymentAccountId: e.target.value })}
+              className={`mt-1 block w-full rounded-md border px-3 py-2 text-gray-900 shadow-sm focus:ring-2 focus:ring-blue-500 ${
+                parseFloat(formData.paidAmount) > 0 && !formData.paymentAccountId
+                  ? 'border-red-300 bg-red-50 focus:border-red-500'
+                  : 'border-gray-300 bg-white focus:border-blue-500'
+              }`}
+            >
+              <option value="">Select account</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.code} - {a.name} ({a.type})
+                </option>
+              ))}
+            </select>
+            {parseFloat(formData.paidAmount) > 0 && (
+              <p className="mt-1 text-xs text-gray-500">
+                Required when Paid Amount &gt; 0
+              </p>
+            )}
+            {parseFloat(formData.paidAmount) > 0 && !formData.paymentAccountId && (
+              <p className="mt-1 text-xs text-red-600">
+                Please select a payment account
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Document Files</label>
+            <input
+              type="file"
+              multiple
+              onChange={(e) => {
+                if (e.target.files) {
+                  Array.from(e.target.files).forEach((file) => handleFileUpload(file));
+                }
+              }}
+              className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+            {attachments.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {attachments.map((att, index) => (
+                  <li key={index} className="flex items-center justify-between text-sm">
+                    <span>{att.fileName}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(index)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex justify-end space-x-4">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+        >
+          {isSubmitting ? 'Saving...' : purchase ? 'Update' : 'Create'}
+        </button>
+      </div>
+
+      {/* Quick Add Warehouse Modal */}
+      {showWarehouseModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Add New Warehouse</h3>
+            {error && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                {error}
+              </div>
+            )}
+            <form onSubmit={handleCreateWarehouse}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newWarehouse.name}
+                  onChange={(e) => setNewWarehouse({ ...newWarehouse, name: e.target.value })}
+                  className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Local, LinkUp Corporation"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Type *
+                </label>
+                <select
+                  required
+                  value={newWarehouse.type}
+                  onChange={(e) => setNewWarehouse({ ...newWarehouse, type: e.target.value as 'LOCAL' | 'COMPANY' })}
+                  className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="LOCAL">Local</option>
+                  <option value="COMPANY">Company</option>
+                </select>
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowWarehouseModal(false);
+                    setNewWarehouse({ name: '', type: 'LOCAL' });
+                    setError(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingWarehouse}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isCreatingWarehouse ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </form>
+  );
+}

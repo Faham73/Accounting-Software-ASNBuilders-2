@@ -4,12 +4,24 @@ export interface Project {
   clientName?: string | null;
   clientContact?: string | null;
   siteLocation?: string | null;
-  startDate?: string | null;
-  expectedEndDate?: string | null;
+  startDate?: string | Date | null;
+  expectedEndDate?: string | Date | null;
   contractValue?: number | null;
   status: 'DRAFT' | 'RUNNING' | 'COMPLETED' | 'CLOSED';
   assignedManager?: string | null;
   isActive: boolean;
+  // New fields
+  address?: string | null;
+  projectManager?: string | null;
+  projectEngineer?: string | null;
+  companySiteName?: string | null;
+  reference?: string | null;
+  isMain?: boolean;
+  parentProjectId?: string | null;
+  parentProject?: { id: string; name: string } | null;
+  // Computed fields
+  entriesCount?: number;
+  filesCount?: number;
   createdAt: string;
   updatedAt: string;
 }

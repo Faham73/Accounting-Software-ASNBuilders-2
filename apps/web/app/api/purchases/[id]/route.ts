@@ -1,0 +1,458 @@
+import { NextRequest, NextResponse } from 'next/server';
+import {
+  requirePermission,
+  createErrorResponse,
+  ForbiddenError,
+  UnauthorizedError,
+} from '@/lib/rbac';
+import { prisma } from '@accounting/db';
+import { PurchaseUpdateSchema } from '@accounting/shared';
+import { ZodError } from 'zod';
+import { createAuditLog } from '@/lib/audit';
+import { Prisma } from '@prisma/client';
+
+/**
+ * GET /api/purchases/[id]
+ * Get a single purchase by ID
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const auth = await requirePermission(request, 'purchases', 'READ');
+
+    const purchase = await prisma.purchase.findUnique({
+      where: {
+        id: params.id,
+        companyId: auth.companyId,
+      },
+      include: {
+        project: {
+          select: { id: true, name: true },
+        },
+        subProject: {
+          select: { id: true, name: true },
+        },
+        supplierVendor: {
+          select: { id: true, name: true, phone: true, address: true },
+        },
+        warehouse: {
+          select: { id: true, name: true, type: true },
+        },
+        paymentAccount: {
+          select: { id: true, code: true, name: true, type: true },
+        },
+        lines: {
+          include: {
+            product: {
+              select: { id: true, name: true, unit: true },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        attachments: {
+          orderBy: { uploadedAt: 'desc' },
+        },
+      },
+    });
+
+    if (!purchase) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Purchase not found',
+        },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      data: purchase,
+    });
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return createErrorResponse(error, 401);
+    }
+    if (error instanceof ForbiddenError) {
+      return createErrorResponse(error, 403);
+    }
+    return createErrorResponse(error instanceof Error ? error : new Error('Unknown error'), 500);
+  }
+}
+
+/**
+ * PUT /api/purchases/[id]
+ * Update a purchase
+ */
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const auth = await requirePermission(request, 'purchases', 'WRITE');
+
+    // Check if purchase exists and belongs to company
+    const existingPurchase = await prisma.purchase.findUnique({
+      where: {
+        id: params.id,
+        companyId: auth.companyId,
+      },
+      include: {
+        voucher: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!existingPurchase) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Purchase not found',
+        },
+        { status: 404 }
+      );
+    }
+
+    // Only allow editing DRAFT purchases
+    if (existingPurchase.status !== 'DRAFT') {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Only DRAFT purchases can be edited',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Prevent editing if voucher exists and is not DRAFT
+    if (existingPurchase.voucherId && existingPurchase.voucher && existingPurchase.voucher.status !== 'DRAFT') {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Purchase cannot be edited when linked voucher is ${existingPurchase.voucher.status}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const body = await request.json();
+    const validatedData = PurchaseUpdateSchema.parse(body);
+
+    // Validate project if provided
+    if (validatedData.projectId) {
+      const project = await prisma.project.findUnique({
+        where: { id: validatedData.projectId },
+      });
+
+      if (!project || project.companyId !== auth.companyId) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'Project not found or does not belong to your company',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate sub-project if provided
+    if (validatedData.subProjectId && validatedData.projectId) {
+      const subProject = await prisma.project.findUnique({
+        where: { id: validatedData.subProjectId },
+      });
+
+      if (!subProject || subProject.companyId !== auth.companyId || subProject.parentProjectId !== validatedData.projectId) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'Sub-project not found, does not belong to your company, or is not a child of the main project',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate supplier vendor if provided
+    if (validatedData.supplierVendorId) {
+      const supplier = await prisma.vendor.findUnique({
+        where: { id: validatedData.supplierVendorId },
+      });
+
+      if (!supplier || supplier.companyId !== auth.companyId) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'Supplier not found or does not belong to your company',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate warehouse if provided
+    if (validatedData.warehouseId) {
+      const warehouse = await prisma.warehouse.findUnique({
+        where: { id: validatedData.warehouseId },
+      });
+
+      if (!warehouse || warehouse.companyId !== auth.companyId) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'Warehouse not found or does not belong to your company',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate payment account if provided
+    if (validatedData.paymentAccountId) {
+      const account = await prisma.account.findUnique({
+        where: { id: validatedData.paymentAccountId },
+      });
+
+      if (!account || account.companyId !== auth.companyId || !account.isActive) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'Payment account not found, inactive, or does not belong to your company',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate products if lines are provided
+    if (validatedData.lines) {
+      const productIds = validatedData.lines.map((line) => line.productId);
+      const products = await prisma.product.findMany({
+        where: {
+          id: { in: productIds },
+          companyId: auth.companyId,
+          isActive: true,
+        },
+      });
+
+      if (products.length !== productIds.length) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'One or more products not found, inactive, or do not belong to your company',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Compute totals server-side if lines are provided
+    let subtotal: Prisma.Decimal | undefined;
+    let total: Prisma.Decimal | undefined;
+    let dueAmount: Prisma.Decimal | undefined;
+
+    if (validatedData.lines) {
+      subtotal = new Prisma.Decimal(validatedData.lines.reduce((sum, line) => sum + line.lineTotal, 0));
+      const discount = validatedData.discountPercent
+        ? subtotal.mul(validatedData.discountPercent).div(100)
+        : new Prisma.Decimal(0);
+      total = subtotal.minus(discount);
+      const paidAmount = validatedData.paidAmount !== undefined
+        ? new Prisma.Decimal(validatedData.paidAmount)
+        : existingPurchase.paidAmount;
+      dueAmount = total.minus(paidAmount);
+    }
+
+    // Update purchase in a transaction
+    const purchase = await prisma.$transaction(async (tx) => {
+      // Delete existing lines if new lines are provided
+      if (validatedData.lines) {
+        await tx.purchaseLine.deleteMany({
+          where: { purchaseId: params.id },
+        });
+      }
+
+      // Delete existing attachments if new attachments are provided
+      if (validatedData.attachments !== undefined) {
+        await tx.purchaseAttachment.deleteMany({
+          where: { purchaseId: params.id },
+        });
+      }
+
+      const updatedPurchase = await tx.purchase.update({
+        where: { id: params.id },
+        data: {
+          ...(validatedData.date && { date: validatedData.date }),
+          ...(validatedData.challanNo !== undefined && { challanNo: validatedData.challanNo }),
+          ...(validatedData.projectId && { projectId: validatedData.projectId }),
+          ...(validatedData.subProjectId !== undefined && { subProjectId: validatedData.subProjectId }),
+          ...(validatedData.supplierVendorId && { supplierVendorId: validatedData.supplierVendorId }),
+          ...(validatedData.warehouseId && { warehouseId: validatedData.warehouseId }),
+          ...(validatedData.reference !== undefined && { reference: validatedData.reference }),
+          ...(validatedData.discountPercent !== undefined && {
+            discountPercent: validatedData.discountPercent ? new Prisma.Decimal(validatedData.discountPercent) : null,
+          }),
+          ...(subtotal !== undefined && { subtotal }),
+          ...(total !== undefined && { total }),
+          ...(validatedData.paidAmount !== undefined && { paidAmount: new Prisma.Decimal(validatedData.paidAmount) }),
+          ...(dueAmount !== undefined && { dueAmount }),
+          ...(validatedData.paymentAccountId !== undefined && { paymentAccountId: validatedData.paymentAccountId }),
+          ...(validatedData.lines && {
+            lines: {
+              create: validatedData.lines.map((line) => ({
+                productId: line.productId,
+                quantity: new Prisma.Decimal(line.quantity),
+                unitPrice: new Prisma.Decimal(line.unitPrice),
+                lineTotal: new Prisma.Decimal(line.lineTotal),
+              })),
+            },
+          }),
+          ...(validatedData.attachments !== undefined && {
+            attachments: {
+              create: validatedData.attachments.map((att) => ({
+                fileName: att.fileName,
+                fileUrl: att.fileUrl,
+                mimeType: att.mimeType,
+                sizeBytes: att.sizeBytes,
+              })),
+            },
+          }),
+        },
+        include: {
+          project: {
+            select: { id: true, name: true },
+          },
+          subProject: {
+            select: { id: true, name: true },
+          },
+          supplierVendor: {
+            select: { id: true, name: true },
+          },
+          warehouse: {
+            select: { id: true, name: true, type: true },
+          },
+          lines: {
+            include: {
+              product: {
+                select: { id: true, name: true, unit: true },
+              },
+            },
+          },
+          attachments: true,
+        },
+      });
+
+      return updatedPurchase;
+    });
+
+    // Create audit log
+    await createAuditLog({
+      companyId: auth.companyId,
+      actorUserId: auth.userId,
+      entityType: 'Purchase',
+      entityId: purchase.id,
+      action: 'UPDATE',
+      before: existingPurchase,
+      after: purchase,
+      request,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      data: purchase,
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: error.errors[0]?.message || 'Validation error',
+        },
+        { status: 400 }
+      );
+    }
+    if (error instanceof UnauthorizedError) {
+      return createErrorResponse(error, 401);
+    }
+    if (error instanceof ForbiddenError) {
+      return createErrorResponse(error, 403);
+    }
+    return createErrorResponse(error instanceof Error ? error : new Error('Unknown error'), 500);
+  }
+}
+
+/**
+ * DELETE /api/purchases/[id]
+ * Delete a purchase
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const auth = await requirePermission(request, 'purchases', 'WRITE');
+
+    // Check if purchase exists and belongs to company
+    const existingPurchase = await prisma.purchase.findUnique({
+      where: {
+        id: params.id,
+        companyId: auth.companyId,
+      },
+    });
+
+    if (!existingPurchase) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Purchase not found',
+        },
+        { status: 404 }
+      );
+    }
+
+    // Only allow deleting DRAFT purchases
+    if (existingPurchase.status !== 'DRAFT') {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Only DRAFT purchases can be deleted',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Delete purchase (cascade will delete lines and attachments)
+    await prisma.purchase.delete({
+      where: { id: params.id },
+    });
+
+    // Create audit log
+    await createAuditLog({
+      companyId: auth.companyId,
+      actorUserId: auth.userId,
+      entityType: 'Purchase',
+      entityId: params.id,
+      action: 'DELETE',
+      before: existingPurchase,
+      request,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      message: 'Purchase deleted successfully',
+    });
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return createErrorResponse(error, 401);
+    }
+    if (error instanceof ForbiddenError) {
+      return createErrorResponse(error, 403);
+    }
+    return createErrorResponse(error instanceof Error ? error : new Error('Unknown error'), 500);
+  }
+}

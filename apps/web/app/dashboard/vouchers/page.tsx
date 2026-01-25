@@ -15,6 +15,7 @@ export default async function VouchersPage() {
 
   const canWrite = can(auth.role, 'vouchers', 'WRITE');
   const canPost = can(auth.role, 'vouchers', 'POST');
+  const canApprove = can(auth.role, 'vouchers', 'APPROVE');
 
   return (
     <DashboardLayout
@@ -30,7 +31,7 @@ export default async function VouchersPage() {
         ) : null
       }
     >
-      <VouchersList canWrite={canWrite} canPost={canPost} />
+      <VouchersList canWrite={canWrite} canPost={canPost} canApprove={canApprove} />
     </DashboardLayout>
   );
 }

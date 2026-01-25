@@ -3,6 +3,7 @@ import { requirePermissionServer } from '@/lib/rbac';
 import { prisma } from '@accounting/db';
 import DashboardLayout from '../../components/DashboardLayout';
 import ProjectForm from '../components/ProjectForm';
+import ProjectStatementActions from './components/ProjectStatementActions';
 import Link from 'next/link';
 
 export default async function EditProjectPage({
@@ -35,6 +36,13 @@ export default async function EditProjectPage({
       status: true,
       assignedManager: true,
       isActive: true,
+      address: true,
+      projectManager: true,
+      projectEngineer: true,
+      companySiteName: true,
+      reference: true,
+      isMain: true,
+      parentProjectId: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -48,7 +56,7 @@ export default async function EditProjectPage({
     <DashboardLayout
       title={`Edit Project: ${project.name}`}
       actions={
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
           <Link
             href={`/dashboard/projects/${params.id}/ledger`}
             className="py-2 px-4 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100"
@@ -61,6 +69,7 @@ export default async function EditProjectPage({
           >
             Cost Summary
           </Link>
+          <ProjectStatementActions projectId={params.id} projectName={project.name} />
         </div>
       }
     >

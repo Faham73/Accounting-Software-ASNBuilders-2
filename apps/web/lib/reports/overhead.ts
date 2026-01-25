@@ -27,7 +27,7 @@ export async function getMonthlyOverhead(
   };
 
   if (!includeDraft) {
-    where.status = 'POSTED';
+    where.status = { in: ['POSTED', 'REVERSED'] };
   }
 
   const vouchers = await prisma.voucher.findMany({

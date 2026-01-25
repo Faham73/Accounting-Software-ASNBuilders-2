@@ -2,10 +2,11 @@ import { VoucherStatus } from '@accounting/db';
 import { Decimal } from '@prisma/client/runtime/library';
 
 /**
- * Check if a voucher is posted
+ * Check if a voucher is posted (includes POSTED and REVERSED statuses)
+ * Both POSTED and REVERSED vouchers count in financial statements
  */
 export function isPosted(status: VoucherStatus): boolean {
-  return status === 'POSTED';
+  return status === 'POSTED' || status === 'REVERSED';
 }
 
 /**

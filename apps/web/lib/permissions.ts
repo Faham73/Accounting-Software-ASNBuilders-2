@@ -1,7 +1,16 @@
-import { UserRole } from '@accounting/db';
+/**
+ * Client-safe permission helpers. No server-only imports (no @accounting/db, next/headers, etc.).
+ * Use requireAuthServer / requirePermissionServer from @/lib/rbac in Server Components only.
+ */
+export type UserRole =
+  | 'ADMIN'
+  | 'ACCOUNTANT'
+  | 'ENGINEER'
+  | 'DATA_ENTRY'
+  | 'VIEWER';
 
-export type Resource = 'companies' | 'projects' | 'vendors' | 'costHeads' | 'paymentMethods' | 'chartOfAccounts' | 'vouchers';
-export type Action = 'READ' | 'WRITE' | 'POST';
+export type Resource = 'companies' | 'projects' | 'vendors' | 'costHeads' | 'paymentMethods' | 'chartOfAccounts' | 'vouchers' | 'purchases' | 'products' | 'warehouses';
+export type Action = 'READ' | 'WRITE' | 'POST' | 'APPROVE';
 
 /**
  * Permissions map defining which roles can perform which actions on which resources
@@ -35,6 +44,19 @@ export const permissions: Record<Resource, Partial<Record<Action, UserRole[]>>> 
     READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
     WRITE: ['ADMIN', 'ACCOUNTANT'],
     POST: ['ADMIN', 'ACCOUNTANT'],
+    APPROVE: ['ADMIN', 'ACCOUNTANT'],
+  },
+  purchases: {
+    READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
+    WRITE: ['ADMIN', 'ACCOUNTANT'],
+  },
+  products: {
+    READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
+    WRITE: ['ADMIN', 'ACCOUNTANT'],
+  },
+  warehouses: {
+    READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
+    WRITE: ['ADMIN', 'ACCOUNTANT'],
   },
 };
 

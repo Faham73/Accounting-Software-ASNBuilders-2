@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Voucher status enum values
  */
-export const VoucherStatusEnum = z.enum(['DRAFT', 'POSTED']);
+export const VoucherStatusEnum = z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'POSTED', 'REVERSED']);
 
 /**
  * Schema for creating a voucher line

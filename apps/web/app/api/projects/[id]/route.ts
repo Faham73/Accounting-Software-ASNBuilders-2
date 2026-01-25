@@ -37,6 +37,13 @@ export async function GET(
         status: true,
         assignedManager: true,
         isActive: true,
+        address: true,
+        projectManager: true,
+        projectEngineer: true,
+        companySiteName: true,
+        reference: true,
+        isMain: true,
+        parentProjectId: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -101,6 +108,36 @@ export async function PATCH(
       );
     }
 
+    // Validate parentProjectId if provided (must belong to same company and be a main project)
+    if (validatedData.parentProjectId !== undefined && validatedData.parentProjectId !== null) {
+      const parentProject = await prisma.project.findFirst({
+        where: {
+          id: validatedData.parentProjectId,
+          companyId: auth.companyId,
+          isMain: true,
+        },
+      });
+      if (!parentProject) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'Parent project not found or is not a main project',
+          },
+          { status: 400 }
+        );
+      }
+      // Prevent circular reference: cannot set parent to self
+      if (validatedData.parentProjectId === params.id) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'Project cannot be its own parent',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Build update data (only include fields that are provided)
     const updateData: any = {};
     if (validatedData.name !== undefined) updateData.name = validatedData.name;
@@ -118,6 +155,18 @@ export async function PATCH(
     if (validatedData.assignedManager !== undefined)
       updateData.assignedManager = validatedData.assignedManager;
     if (validatedData.isActive !== undefined) updateData.isActive = validatedData.isActive;
+    // New fields
+    if (validatedData.address !== undefined) updateData.address = validatedData.address;
+    if (validatedData.projectManager !== undefined)
+      updateData.projectManager = validatedData.projectManager;
+    if (validatedData.projectEngineer !== undefined)
+      updateData.projectEngineer = validatedData.projectEngineer;
+    if (validatedData.companySiteName !== undefined)
+      updateData.companySiteName = validatedData.companySiteName;
+    if (validatedData.reference !== undefined) updateData.reference = validatedData.reference;
+    if (validatedData.isMain !== undefined) updateData.isMain = validatedData.isMain;
+    if (validatedData.parentProjectId !== undefined)
+      updateData.parentProjectId = validatedData.parentProjectId;
 
     const updatedProject = await prisma.project.update({
       where: { id: params.id },
@@ -134,6 +183,13 @@ export async function PATCH(
         status: true,
         assignedManager: true,
         isActive: true,
+        address: true,
+        projectManager: true,
+        projectEngineer: true,
+        companySiteName: true,
+        reference: true,
+        isMain: true,
+        parentProjectId: true,
         createdAt: true,
         updatedAt: true,
       },

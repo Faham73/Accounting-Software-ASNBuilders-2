@@ -8,10 +8,12 @@ interface Voucher {
   id: string;
   voucherNo: string;
   date: string;
-  status: 'DRAFT' | 'POSTED';
+  status: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'POSTED' | 'REVERSED';
   narration: string | null;
   project?: { id: string; name: string } | null;
   createdBy: { id: string; name: string };
+  submittedBy?: { id: string; name: string } | null;
+  approvedBy?: { id: string; name: string } | null;
   postedBy?: { id: string; name: string } | null;
   postedAt?: string | null;
   lines: Array<{ debit: number; credit: number }>;
@@ -20,6 +22,7 @@ interface Voucher {
 interface VouchersListProps {
   canWrite: boolean;
   canPost: boolean;
+  canApprove: boolean;
 }
 
 export default function VouchersList({ canWrite, canPost }: VouchersListProps) {
@@ -113,7 +116,10 @@ export default function VouchersList({ canWrite, canPost }: VouchersListProps) {
           >
             <option value="all">All Status</option>
             <option value="DRAFT">Draft</option>
+            <option value="SUBMITTED">Submitted</option>
+            <option value="APPROVED">Approved</option>
             <option value="POSTED">Posted</option>
+            <option value="REVERSED">Reversed</option>
           </select>
         </div>
         <div>
@@ -189,6 +195,12 @@ export default function VouchersList({ canWrite, canPost }: VouchersListProps) {
                           className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                             voucher.status === 'POSTED'
                               ? 'bg-green-100 text-green-800'
+                              : voucher.status === 'APPROVED'
+                              ? 'bg-blue-100 text-blue-800'
+                              : voucher.status === 'SUBMITTED'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : voucher.status === 'REVERSED'
+                              ? 'bg-red-100 text-red-800'
                               : 'bg-gray-100 text-gray-800'
                           }`}
                         >

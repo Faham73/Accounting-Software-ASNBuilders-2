@@ -26,6 +26,9 @@ export default async function DashboardLayout({
   const canReadPaymentMethods = can(role, 'paymentMethods', 'READ');
   const canReadChartOfAccounts = can(role, 'chartOfAccounts', 'READ');
   const canReadVouchers = can(role, 'vouchers', 'READ');
+  const canReadPurchases = can(role, 'purchases', 'READ');
+  const canReadProducts = can(role, 'products', 'READ');
+  const canReadWarehouses = can(role, 'warehouses', 'READ');
   const canWriteProjects = can(role, 'projects', 'WRITE');
   const canWriteVendors = can(role, 'vendors', 'WRITE');
   const canWriteCostHeads = can(role, 'costHeads', 'WRITE');
@@ -99,6 +102,30 @@ export default async function DashboardLayout({
                   className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
                 >
                   Vouchers
+                </Link>
+              )}
+              {canReadPurchases && (
+                <Link
+                  href="/dashboard/purchases"
+                  className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                >
+                  Purchases
+                </Link>
+              )}
+              {canReadProducts && (
+                <Link
+                  href="/dashboard/products"
+                  className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                >
+                  Products {can(role, 'products', 'WRITE') && '✏️'}
+                </Link>
+              )}
+              {canReadWarehouses && (
+                <Link
+                  href="/dashboard/warehouses"
+                  className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                >
+                  Warehouses {can(role, 'warehouses', 'WRITE') && '✏️'}
                 </Link>
               )}
               {canReadVouchers && (

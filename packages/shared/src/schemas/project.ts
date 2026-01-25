@@ -23,6 +23,14 @@ export const ProjectCreateSchema = z.object({
   status: ProjectStatusEnum.optional().default('DRAFT'),
   assignedManager: z.string().optional(),
   isActive: z.boolean().optional().default(true),
+  // New fields
+  address: z.string().optional().nullable(),
+  projectManager: z.string().optional().nullable(),
+  projectEngineer: z.string().optional().nullable(),
+  companySiteName: z.string().optional().nullable(),
+  reference: z.string().optional().nullable(),
+  isMain: z.boolean().optional().default(false),
+  parentProjectId: z.string().optional().nullable(),
 });
 
 /**
@@ -43,6 +51,14 @@ export const ProjectUpdateSchema = z.object({
   status: ProjectStatusEnum.optional(),
   assignedManager: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
+  // New fields
+  address: z.string().optional().nullable(),
+  projectManager: z.string().optional().nullable(),
+  projectEngineer: z.string().optional().nullable(),
+  companySiteName: z.string().optional().nullable(),
+  reference: z.string().optional().nullable(),
+  isMain: z.boolean().optional(),
+  parentProjectId: z.string().optional().nullable(),
 });
 
 // Inferred TypeScript types

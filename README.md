@@ -38,10 +38,12 @@ Construction accounting web application built with Next.js and PostgreSQL.
    npm run db:migrate
    ```
 
-6. **Seed the database:**
+6. **Seed the database (demo data for all tables):**
    ```bash
    npm run db:seed
    ```
+   Or from `packages/db`: `npx prisma db seed` (uses `prisma.seed` in package.json).  
+   Seed is idempotent; demo users use password `password123`.
 
 7. **Start development server:**
    ```bash
@@ -70,7 +72,7 @@ Construction accounting web application built with Next.js and PostgreSQL.
 - `npm run build` - Build for production
 - `npm run start` - Start production server
 - `npm run db:migrate` - Run database migrations
-- `npm run db:seed` - Seed database with initial data
+- `npm run db:seed` - Seed database with comprehensive demo data (companies, users, projects, vouchers, etc.)
 - `npm run db:up` - Start PostgreSQL with Docker
 - `npm run db:down` - Stop PostgreSQL Docker container
 - `npm run prisma:studio` - Open Prisma Studio (database GUI)

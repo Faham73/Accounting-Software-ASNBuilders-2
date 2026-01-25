@@ -71,6 +71,37 @@ export default function ProjectLedgerClient({
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
 
+  const handlePrint = () => {
+    const params = new URLSearchParams();
+    if (filters.from) params.append('from', filters.from);
+    if (filters.to) params.append('to', filters.to);
+    window.open(`/print/projects/${projectId}/statement?${params.toString()}`, '_blank');
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('id', projectId);
+      if (filters.from) params.append('from', filters.from);
+      if (filters.to) params.append('to', filters.to);
+      const response = await fetch(`/api/pdf/project-statement?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `project-statement-${projectName}-${filters.from || 'all'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      alert('An error occurred while generating the PDF');
+    }
+  };
+
   // Filter options
   const [vendors, setVendors] = useState<FilterOption[]>([]);
   const [costHeads, setCostHeads] = useState<FilterOption[]>([]);
@@ -170,9 +201,23 @@ export default function ProjectLedgerClient({
 
   return (
     <div>
-      {/* Header with date range */}
-      <div className="mb-6">
-        <div className="text-sm text-gray-600 mb-2">Project: {projectName}</div>
+      {/* Actions */}
+      <div className="mb-6 bg-white border border-gray-200 rounded-lg p-4 flex justify-between items-center">
+        <h2 className="text-lg font-semibold text-gray-900">Project Ledger: {projectName}</h2>
+        <div className="flex gap-2">
+          <button
+            onClick={handlePrint}
+            className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 inline-flex items-center gap-2"
+          >
+            <span>🖨️</span> Print Statement
+          </button>
+          <button
+            onClick={handleDownloadPDF}
+            className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 inline-flex items-center gap-2"
+          >
+            <span>📄</span> PDF
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
