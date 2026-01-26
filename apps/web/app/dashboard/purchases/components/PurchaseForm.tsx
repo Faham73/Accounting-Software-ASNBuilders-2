@@ -2,12 +2,19 @@
 
 import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+type PurchaseLineType = 'MATERIAL' | 'SERVICE' | 'OTHER';
 
 interface PurchaseLine {
   id?: string;
-  productId: string;
-  quantity: number;
-  unitPrice: number;
+  lineType: PurchaseLineType;
+  productId?: string | null;
+  stockItemId?: string | null;
+  quantity?: number | null;
+  unit?: string | null;
+  unitRate?: number | null;
+  description?: string | null;
   lineTotal: number;
 }
 
@@ -25,7 +32,6 @@ interface Purchase {
   projectId: string;
   subProjectId: string | null;
   supplierVendorId: string;
-  warehouseId: string;
   reference: string | null;
   discountPercent: number | null;
   paidAmount: number;
@@ -58,15 +64,16 @@ interface Product {
   unit: string;
 }
 
+interface StockItem {
+  id: string;
+  name: string;
+  unit: string;
+  category?: string | null;
+}
+
 interface Vendor {
   id: string;
   name: string;
-}
-
-interface Warehouse {
-  id: string;
-  name: string;
-  type: string;
 }
 
 interface Account {
@@ -98,12 +105,9 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [subProjects, setSubProjects] = useState<Project[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [showWarehouseModal, setShowWarehouseModal] = useState(false);
-  const [newWarehouse, setNewWarehouse] = useState({ name: '', type: 'LOCAL' as 'LOCAL' | 'COMPANY' });
-  const [isCreatingWarehouse, setIsCreatingWarehouse] = useState(false);
 
   const [formData, setFormData] = useState({
     date: toDateInputValue(purchase?.date || new Date()),
@@ -111,7 +115,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     projectId: purchase?.projectId || '',
     subProjectId: purchase?.subProjectId || '',
     supplierVendorId: purchase?.supplierVendorId || '',
-    warehouseId: purchase?.warehouseId || '',
     reference: purchase?.reference || '',
     discountPercent: purchase?.discountPercent?.toString() || '',
     paidAmount: purchase?.paidAmount?.toString() || '0',
@@ -119,11 +122,15 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
   });
 
   const [lines, setLines] = useState<PurchaseLine[]>(
-    purchase?.lines.map((l) => ({
+    purchase?.lines.map((l: any) => ({
       id: l.id,
-      productId: l.productId,
-      quantity: Number(l.quantity),
-      unitPrice: Number(l.unitPrice),
+      lineType: (l.lineType || 'OTHER') as PurchaseLineType,
+      productId: l.productId || null,
+      stockItemId: l.stockItemId || null,
+      quantity: l.quantity ? Number(l.quantity) : null,
+      unit: l.unit || null,
+      unitRate: l.unitRate ? Number(l.unitRate) : null,
+      description: l.description || null,
       lineTotal: Number(l.lineTotal),
     })) || []
   );
@@ -136,19 +143,19 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [projectsRes, productsRes, vendorsRes, warehousesRes, accountsRes] = await Promise.all([
+        const [projectsRes, productsRes, stockItemsRes, vendorsRes, accountsRes] = await Promise.all([
           fetch('/api/projects?status=all&active=all'),
           fetch('/api/products'),
+          fetch('/api/stock/items?isActive=true'),
           fetch('/api/vendors'),
-          fetch('/api/warehouses'),
           fetch('/api/chart-of-accounts?active=true'),
         ]);
 
-        const [projectsData, productsData, vendorsData, warehousesData, accountsData] = await Promise.all([
+        const [projectsData, productsData, stockItemsData, vendorsData, accountsData] = await Promise.all([
           projectsRes.json(),
           productsRes.json(),
+          stockItemsRes.json(),
           vendorsRes.json(),
-          warehousesRes.json(),
           accountsRes.json(),
         ]);
 
@@ -166,12 +173,8 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         }
 
         if (productsData.ok) setProducts(productsData.data);
+        if (stockItemsData.ok) setStockItems(stockItemsData.data);
         if (vendorsData.ok) setVendors(vendorsData.data);
-        if (warehousesData.ok) {
-          setWarehouses(warehousesData.data);
-        } else {
-          console.error('Failed to fetch warehouses:', warehousesData);
-        }
         if (accountsData.ok) {
           // Filter to leaf accounts (accounts that don't have children)
           // We'll need to check if any other account has this as parent
@@ -189,43 +192,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     fetchData();
   }, []);
 
-  // Handle warehouse creation
-  const handleCreateWarehouse = async (e: FormEvent) => {
-    e.preventDefault();
-    setIsCreatingWarehouse(true);
-    setError(null);
-
-    try {
-      const res = await fetch('/api/warehouses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newWarehouse),
-      });
-
-      const data = await res.json();
-
-      if (data.ok) {
-        // Refresh warehouses list
-        const warehousesRes = await fetch('/api/warehouses');
-        const warehousesData = await warehousesRes.json();
-        if (warehousesData.ok) {
-          setWarehouses(warehousesData.data);
-        }
-        // Select the newly created warehouse
-        setFormData((prev) => ({ ...prev, warehouseId: data.data.id }));
-        // Close modal and reset form
-        setShowWarehouseModal(false);
-        setNewWarehouse({ name: '', type: 'LOCAL' });
-      } else {
-        setError(data.error || 'Failed to create warehouse');
-      }
-    } catch (err) {
-      setError('Failed to create warehouse');
-      console.error(err);
-    } finally {
-      setIsCreatingWarehouse(false);
-    }
-  };
 
   // Update sub-projects when main project changes
   useEffect(() => {
@@ -261,9 +227,13 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     setLines([
       ...lines,
       {
-        productId: '',
-        quantity: 0,
-        unitPrice: 0,
+        lineType: 'OTHER',
+        productId: null,
+        stockItemId: null,
+        quantity: null,
+        unit: null,
+        unitRate: null,
+        description: null,
         lineTotal: 0,
       },
     ]);
@@ -275,13 +245,70 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
 
   const updateLine = (index: number, field: keyof PurchaseLine, value: any) => {
     const newLines = [...lines];
-    newLines[index] = { ...newLines[index], [field]: value };
+    const line = newLines[index];
+    newLines[index] = { ...line, [field]: value };
 
-    // Recalculate line total
-    if (field === 'quantity' || field === 'unitPrice') {
-      const quantity = field === 'quantity' ? value : newLines[index].quantity;
-      const unitPrice = field === 'unitPrice' ? value : newLines[index].unitPrice;
-      newLines[index].lineTotal = quantity * unitPrice;
+    // When lineType changes, reset relevant fields
+    if (field === 'lineType') {
+      if (value === 'MATERIAL') {
+        newLines[index] = {
+          ...line,
+          lineType: value,
+          productId: null,
+          stockItemId: null,
+          quantity: null,
+          unit: null,
+          unitRate: null,
+          description: null,
+          lineTotal: 0,
+        };
+      } else if (value === 'SERVICE') {
+        newLines[index] = {
+          ...line,
+          lineType: value,
+          productId: null,
+          stockItemId: null,
+          quantity: null,
+          unit: null,
+          unitRate: null,
+          description: null,
+          lineTotal: 0,
+        };
+      } else {
+        newLines[index] = {
+          ...line,
+          lineType: value,
+          productId: null,
+          stockItemId: null,
+          quantity: null,
+          unit: null,
+          unitRate: null,
+          description: null,
+          lineTotal: 0,
+        };
+      }
+    }
+
+    // When stockItemId changes, update unit from stockItem
+    if (field === 'stockItemId' && value) {
+      const stockItem = stockItems.find((si) => si.id === value);
+      if (stockItem) {
+        newLines[index].unit = stockItem.unit;
+      }
+    }
+
+    // Recalculate line total for MATERIAL and SERVICE
+    if (field === 'quantity' || field === 'unitRate') {
+      const quantity = field === 'quantity' ? (value || 0) : (line.quantity || 0);
+      const unitRate = field === 'unitRate' ? (value || 0) : (line.unitRate || 0);
+      if (line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') {
+        newLines[index].lineTotal = quantity * unitRate;
+      }
+    }
+
+    // For OTHER lines, lineTotal is entered directly
+    if (field === 'lineTotal' && line.lineType === 'OTHER') {
+      newLines[index].lineTotal = value || 0;
     }
 
     setLines(newLines);
@@ -339,27 +366,41 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
       setError('Vendor is required');
       return;
     }
-    if (!formData.warehouseId) {
-      setError('Warehouse is required');
-      return;
-    }
     if (lines.length === 0) {
       setError('At least one product line is required');
       return;
     }
 
-    for (const line of lines) {
-      if (!line.productId) {
-        setError('Product is required for all lines');
-        return;
-      }
-      if (line.quantity <= 0) {
-        setError('Quantity must be greater than 0');
-        return;
-      }
-      if (line.unitPrice < 0) {
-        setError('Unit price must be non-negative');
-        return;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      if (line.lineType === 'MATERIAL') {
+        if (!line.stockItemId) {
+          setError(`Line ${i + 1}: Stock item is required for MATERIAL lines`);
+          return;
+        }
+        if (!line.quantity || line.quantity <= 0) {
+          setError(`Line ${i + 1}: Quantity must be greater than 0 for MATERIAL lines`);
+          return;
+        }
+        if (!line.unitRate || line.unitRate < 0) {
+          setError(`Line ${i + 1}: Unit rate is required for MATERIAL lines`);
+          return;
+        }
+      } else if (line.lineType === 'SERVICE') {
+        if (!line.description) {
+          setError(`Line ${i + 1}: Description is required for SERVICE lines`);
+          return;
+        }
+        if (line.lineTotal <= 0) {
+          setError(`Line ${i + 1}: Amount must be greater than 0 for SERVICE lines`);
+          return;
+        }
+      } else if (line.lineType === 'OTHER') {
+        if (line.lineTotal <= 0) {
+          setError(`Line ${i + 1}: Amount must be greater than 0 for OTHER lines`);
+          return;
+        }
       }
     }
 
@@ -384,15 +425,18 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         projectId: formData.projectId,
         subProjectId: formData.subProjectId || null,
         supplierVendorId: formData.supplierVendorId,
-        warehouseId: formData.warehouseId,
         reference: formData.reference || null,
         discountPercent: formData.discountPercent ? parseFloat(formData.discountPercent) : null,
         paidAmount: parseFloat(formData.paidAmount) || 0,
         paymentAccountId: formData.paymentAccountId || null,
         lines: lines.map((line) => ({
-          productId: line.productId,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice,
+          lineType: line.lineType,
+          productId: line.productId || null,
+          stockItemId: line.stockItemId || null,
+          quantity: line.quantity || null,
+          unit: line.unit || null,
+          unitRate: line.unitRate || null,
+          description: line.description || null,
           lineTotal: line.lineTotal,
         })),
         attachments: attachments,
@@ -510,35 +554,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         </div>
 
         <div>
-          <div className="flex items-center justify-between">
-            <label className="block text-sm font-medium text-gray-700">Warehouse/Company *</label>
-            <button
-              type="button"
-              onClick={() => setShowWarehouseModal(true)}
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-            >
-              + Add Warehouse
-            </button>
-          </div>
-          <select
-            required
-            value={formData.warehouseId}
-            onChange={(e) => setFormData({ ...formData, warehouseId: e.target.value })}
-            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select warehouse</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name} ({w.type})
-              </option>
-            ))}
-          </select>
-          {warehouses.length === 0 && (
-            <p className="mt-1 text-xs text-gray-500">No warehouses found. Click "+ Add Warehouse" to create one.</p>
-          )}
-        </div>
-
-        <div>
           <label className="block text-sm font-medium text-gray-700">Reference</label>
           <input
             type="text"
@@ -549,16 +564,16 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         </div>
       </div>
 
-      {/* Product Lines */}
+      {/* Line Items */}
       <div>
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-medium">Product Lines</h3>
+          <h3 className="text-lg font-medium">Line Items</h3>
           <button
             type="button"
             onClick={addLine}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
           >
-            Add Product
+            Add Line Item
           </button>
         </div>
 
@@ -566,10 +581,12 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Price</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Line Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item/Description</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit Rate</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
               </tr>
             </thead>
@@ -579,47 +596,123 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
                   <td className="px-6 py-4">
                     <select
                       required
-                      value={line.productId}
-                      onChange={(e) => updateLine(index, 'productId', e.target.value)}
+                      value={line.lineType}
+                      onChange={(e) => updateLine(index, 'lineType', e.target.value)}
                       className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Select product</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.unit})
-                        </option>
-                      ))}
+                      <option value="MATERIAL">Material</option>
+                      <option value="SERVICE">Service</option>
+                      <option value="OTHER">Other</option>
                     </select>
                   </td>
                   <td className="px-6 py-4">
-                    <input
-                      type="number"
-                      required
-                      min="0.001"
-                      step="0.001"
-                      value={line.quantity || ''}
-                      onChange={(e) => updateLine(index, 'quantity', parseFloat(e.target.value) || 0)}
-                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                    />
+                    {line.lineType === 'MATERIAL' ? (
+                      <div className="space-y-2">
+                        <select
+                          required
+                          value={line.stockItemId || ''}
+                          onChange={(e) => updateLine(index, 'stockItemId', e.target.value)}
+                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select material</option>
+                          {stockItems.map((si) => (
+                            <option key={si.id} value={si.id}>
+                              {si.name}
+                            </option>
+                          ))}
+                        </select>
+                        <Link
+                          href="/dashboard/stock/items"
+                          target="_blank"
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          + Manage Materials
+                        </Link>
+                      </div>
+                    ) : line.lineType === 'SERVICE' ? (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          placeholder="Service description"
+                          value={line.description || ''}
+                          onChange={(e) => updateLine(index, 'description', e.target.value)}
+                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          placeholder="Expense description"
+                          value={line.description || ''}
+                          onChange={(e) => updateLine(index, 'description', e.target.value)}
+                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-4">
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      step="0.01"
-                      value={line.unitPrice || ''}
-                      onChange={(e) => updateLine(index, 'unitPrice', parseFloat(e.target.value) || 0)}
-                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                    />
+                    {(line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') ? (
+                      <input
+                        type="number"
+                        required={line.lineType === 'MATERIAL'}
+                        min="0.001"
+                        step="0.001"
+                        value={line.quantity || ''}
+                        onChange={(e) => updateLine(index, 'quantity', parseFloat(e.target.value) || null)}
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                      />
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
-                    <input
-                      type="number"
-                      readOnly
-                      value={line.lineTotal.toFixed(2)}
-                      className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-gray-900 shadow-sm"
-                    />
+                    {(line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') ? (
+                      <input
+                        type="text"
+                        value={line.unit || ''}
+                        onChange={(e) => updateLine(index, 'unit', e.target.value)}
+                        placeholder="Unit"
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                      />
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    {(line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') ? (
+                      <input
+                        type="number"
+                        required={line.lineType === 'MATERIAL'}
+                        min="0"
+                        step="0.01"
+                        value={line.unitRate || ''}
+                        onChange={(e) => updateLine(index, 'unitRate', parseFloat(e.target.value) || null)}
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                      />
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    {line.lineType === 'OTHER' ? (
+                      <input
+                        type="number"
+                        required
+                        min="0"
+                        step="0.01"
+                        value={line.lineTotal || ''}
+                        onChange={(e) => updateLine(index, 'lineTotal', parseFloat(e.target.value) || 0)}
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                      />
+                    ) : (
+                      <input
+                        type="number"
+                        readOnly
+                        value={line.lineTotal.toFixed(2)}
+                        className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-gray-900 shadow-sm"
+                      />
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <button
@@ -770,68 +863,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         </button>
       </div>
 
-      {/* Quick Add Warehouse Modal */}
-      {showWarehouseModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Add New Warehouse</h3>
-            {error && (
-              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-                {error}
-              </div>
-            )}
-            <form onSubmit={handleCreateWarehouse}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newWarehouse.name}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, name: e.target.value })}
-                  className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Local, LinkUp Corporation"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Type *
-                </label>
-                <select
-                  required
-                  value={newWarehouse.type}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, type: e.target.value as 'LOCAL' | 'COMPANY' })}
-                  className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="LOCAL">Local</option>
-                  <option value="COMPANY">Company</option>
-                </select>
-              </div>
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowWarehouseModal(false);
-                    setNewWarehouse({ name: '', type: 'LOCAL' });
-                    setError(null);
-                  }}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isCreatingWarehouse}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isCreatingWarehouse ? 'Creating...' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </form>
   );
 }

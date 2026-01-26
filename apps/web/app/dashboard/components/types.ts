@@ -37,15 +37,6 @@ export interface Vendor {
   updatedAt: string;
 }
 
-export interface CostHead {
-  id: string;
-  name: string;
-  code?: string | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface PaymentMethod {
   id: string;
   name: string;

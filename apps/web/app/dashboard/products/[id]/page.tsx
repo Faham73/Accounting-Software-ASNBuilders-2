@@ -109,7 +109,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
               <p className="mt-1 text-sm text-gray-900">{product.category?.name || '-'}</p>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-500">Company/Warehouse</label>
+              <label className="text-sm font-medium text-gray-500">Company</label>
               <p className="mt-1 text-sm text-gray-900">Company</p>
             </div>
             <div>

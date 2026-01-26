@@ -45,7 +45,6 @@ export async function GET(
             vendor: {
               select: { id: true, name: true },
             },
-            costHead: {
               select: { id: true, name: true },
             },
             paymentMethod: {
@@ -255,7 +254,6 @@ export async function PATCH(
             credit: line.credit,
             projectId: expenseType === 'OFFICE_EXPENSE' ? null : (line.projectId || null),
             vendorId: line.vendorId || null,
-            costHeadId: line.costHeadId || null,
             paymentMethodId: line.paymentMethodId || null,
           })),
         });

@@ -6,19 +6,77 @@ import { z } from 'zod';
 export const PurchaseStatusEnum = z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'POSTED', 'REVERSED']);
 
 /**
- * Warehouse type enum values
+ * Purchase line type enum values
  */
-export const WarehouseTypeEnum = z.enum(['LOCAL', 'COMPANY']);
+export const PurchaseLineTypeEnum = z.enum(['MATERIAL', 'SERVICE', 'OTHER']);
 
 /**
  * Schema for creating a purchase line
  */
-export const PurchaseLineCreateSchema = z.object({
-  productId: z.string().min(1, 'Product is required'),
-  quantity: z.number().positive('Quantity must be greater than 0'),
-  unitPrice: z.number().nonnegative('Unit price must be non-negative'),
-  lineTotal: z.number().nonnegative('Line total must be non-negative'),
-});
+export const PurchaseLineCreateSchema = z
+  .object({
+    lineType: PurchaseLineTypeEnum.default('OTHER'),
+    productId: z.string().optional().nullable(),
+    stockItemId: z.string().optional().nullable(),
+    quantity: z.number().nonnegative('Quantity must be non-negative').optional().nullable(),
+    unit: z.string().optional().nullable(),
+    unitRate: z.number().nonnegative('Unit rate must be non-negative').optional().nullable(),
+    description: z.string().optional().nullable(),
+    lineTotal: z.number().nonnegative('Line total must be non-negative'),
+  })
+  .superRefine((data, ctx) => {
+    // MATERIAL lines require stockItemId OR productId (legacy) and quantity > 0
+    if (data.lineType === 'MATERIAL') {
+      if (!data.stockItemId && !data.productId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Stock item or product is required for MATERIAL lines',
+          path: ['stockItemId'],
+        });
+      }
+      if (!data.quantity || data.quantity <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Quantity must be greater than 0 for MATERIAL lines',
+          path: ['quantity'],
+        });
+      }
+    }
+
+    // SERVICE lines require description + amount > 0
+    if (data.lineType === 'SERVICE') {
+      if (!data.description) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Description is required for SERVICE lines',
+          path: ['description'],
+        });
+      }
+      if (data.lineTotal <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Amount must be greater than 0 for SERVICE lines',
+          path: ['lineTotal'],
+        });
+      }
+    }
+
+    // OTHER lines require amount > 0
+    if (data.lineType === 'OTHER') {
+      if (data.lineTotal <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Amount must be greater than 0 for OTHER lines',
+          path: ['lineTotal'],
+        });
+      }
+    }
+
+    // Compute lineTotal from qty * unitRate if not provided
+    if (data.quantity && data.unitRate && (!data.lineTotal || data.lineTotal === 0)) {
+      // This will be handled server-side, but we can validate here
+    }
+  });
 
 /**
  * Schema for creating a purchase attachment
@@ -39,7 +97,6 @@ export const PurchaseCreateSchema = z.object({
   projectId: z.string().min(1, 'Main project is required'),
   subProjectId: z.string().optional().nullable(),
   supplierVendorId: z.string().min(1, 'Supplier is required'),
-  warehouseId: z.string().min(1, 'Warehouse is required'),
   reference: z.string().optional().nullable(),
   discountPercent: z.number().nonnegative().max(100).optional().nullable(),
   paidAmount: z.number().nonnegative('Paid amount must be non-negative').default(0),
@@ -80,7 +137,6 @@ export const PurchaseUpdateSchema = z.object({
   projectId: z.string().min(1, 'Main project is required').optional(),
   subProjectId: z.string().optional().nullable(),
   supplierVendorId: z.string().min(1, 'Supplier is required').optional(),
-  warehouseId: z.string().min(1, 'Warehouse is required').optional(),
   reference: z.string().optional().nullable(),
   discountPercent: z.number().nonnegative().max(100).optional().nullable(),
   paidAmount: z.number().nonnegative('Paid amount must be non-negative').optional(),
@@ -132,4 +188,4 @@ export type PurchaseCreate = z.infer<typeof PurchaseCreateSchema>;
 export type PurchaseUpdate = z.infer<typeof PurchaseUpdateSchema>;
 export type PurchaseListFilters = z.infer<typeof PurchaseListFiltersSchema>;
 export type PurchaseStatus = z.infer<typeof PurchaseStatusEnum>;
-export type WarehouseType = z.infer<typeof WarehouseTypeEnum>;
+export type PurchaseLineType = z.infer<typeof PurchaseLineTypeEnum>;

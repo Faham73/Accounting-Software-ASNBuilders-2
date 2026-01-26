@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import {
   requireAuth,
   requirePermission,
@@ -18,6 +19,10 @@ import {
   createInventoryTxnsForPostedPurchase,
   createInventoryReversalForPurchase,
 } from '@/lib/purchases/purchaseAccounting.server';
+import {
+  createStockMovementsForPostedPurchase,
+  reverseStockMovementsForPurchase,
+} from '@/lib/purchases/stockIntegration.server';
 import { can } from '@/lib/permissions';
 
 /**
@@ -170,11 +175,48 @@ export async function POST(
     // Create inventory transactions on POST
     if (action === 'POST' && workflowResult.voucher?.status === 'POSTED') {
       await createInventoryTxnsForPostedPurchase(params.id, auth.companyId);
+      // Create stock movements for purchase lines with stockItemId
+      // Debug: Log material lines before creating stock movements
+      const purchaseForDebug = await prisma.purchase.findUnique({
+        where: { id: params.id, companyId: auth.companyId },
+        include: {
+          lines: {
+            where: {
+              lineType: 'MATERIAL',
+              stockItemId: { not: null },
+              quantity: { gt: 0 },
+            },
+            include: {
+              stockItem: true,
+            },
+          },
+        },
+      });
+      
+      if (purchaseForDebug) {
+        const materialLines = purchaseForDebug.lines.filter(
+          (line) => line.lineType === 'MATERIAL' && line.stockItemId && line.quantity && line.quantity.gt(0)
+        );
+        console.log(`[Purchase POST] Material lines count: ${materialLines.length}`);
+        materialLines.forEach((line, idx) => {
+          console.log(
+            `[Purchase POST] Material line ${idx + 1}: stockItemId=${line.stockItemId}, stockItemName=${line.stockItem?.name || 'N/A'}, qty=${line.quantity?.toString() || '0'}, unitRate=${line.unitRate?.toString() || 'N/A'}`
+          );
+        });
+      }
+      
+      const stockResult = await createStockMovementsForPostedPurchase(params.id, auth.companyId, auth.userId);
+      console.log(`[Purchase POST] Stock movements created: ${stockResult.movementsCreated}`);
+      if (stockResult.error) {
+        console.error(`[Purchase POST] Stock movement error: ${stockResult.error}`);
+      }
     }
 
     // Create inventory reversal on REVERSE
     if (action === 'REVERSE') {
       await createInventoryReversalForPurchase(params.id, auth.companyId);
+      // Reverse stock movements
+      await reverseStockMovementsForPurchase(params.id, auth.companyId, auth.userId);
     }
 
     // Fetch updated purchase
@@ -190,6 +232,13 @@ export async function POST(
         },
       },
     });
+
+    // Revalidate purchase and voucher pages
+    revalidatePath(`/dashboard/purchases/${params.id}`);
+    revalidatePath('/dashboard/purchases');
+    if (voucherId) {
+      revalidatePath(`/dashboard/vouchers/${voucherId}`);
+    }
 
     return NextResponse.json({
       ok: true,

@@ -37,16 +37,126 @@ async function getDefaultAccounts(companyId: string) {
     },
   });
 
-  // Get default purchases/materials account (code 5010 - Direct Materials)
-  const purchasesAccount = await prisma.account.findFirst({
-    where: {
-      companyId,
-      code: '5010',
-      isActive: true,
-    },
-  });
+  // Get default accounts by code
+  const [materialsAccount, laborAccount, overheadAccount, miscAccount] = await Promise.all([
+    // 5010 - Direct Materials
+    prisma.account.findFirst({
+      where: { companyId, code: '5010', isActive: true },
+    }),
+    // 5020 - Direct Labor
+    prisma.account.findFirst({
+      where: { companyId, code: '5020', isActive: true },
+    }),
+    // 5030 - Site Overhead
+    prisma.account.findFirst({
+      where: { companyId, code: '5030', isActive: true },
+    }),
+    // 5090 - Misc Expense
+    prisma.account.findFirst({
+      where: { companyId, code: '5090', isActive: true },
+    }),
+  ]);
 
-  return { apAccount, purchasesAccount };
+  return {
+    apAccount,
+    materialsAccount: materialsAccount || null,
+    laborAccount: laborAccount || null,
+    overheadAccount: overheadAccount || null,
+    miscAccount: miscAccount || null,
+  };
+}
+
+/**
+ * Get material/inventory account for a purchase line
+ */
+async function getMaterialAccount(
+  line: {
+    lineType: string;
+    product?: { inventoryAccountId: string | null } | null;
+    stockItemId?: string | null;
+  },
+  defaultMaterialsAccount: { id: string } | null,
+  companyId: string
+): Promise<{ success: boolean; accountId?: string; error?: string }> {
+  // Only MATERIAL lines use inventory/materials accounts
+  if (line.lineType !== 'MATERIAL') {
+    return { success: false, error: 'Not a MATERIAL line' };
+  }
+
+  // Try product's inventory account first (legacy)
+  if (line.product?.inventoryAccountId) {
+    const invAccount = await prisma.account.findUnique({
+      where: { id: line.product.inventoryAccountId },
+    });
+    if (invAccount && invAccount.isActive && invAccount.companyId === companyId) {
+      const isLeaf = await isLeafAccount(invAccount.id);
+      if (isLeaf) {
+        return { success: true, accountId: invAccount.id };
+      }
+    }
+  }
+
+  // Fallback to default materials account
+  if (defaultMaterialsAccount) {
+    const isLeaf = await isLeafAccount(defaultMaterialsAccount.id);
+    if (isLeaf) {
+      return { success: true, accountId: defaultMaterialsAccount.id };
+    }
+  }
+
+  return {
+    success: false,
+    error: 'Inventory/Materials account not configured. Please set up account code 5010 (Direct Materials) or configure product inventory accounts.',
+  };
+}
+
+/**
+ * Get expense account for SERVICE or OTHER purchase lines
+ */
+async function getExpenseAccount(
+  line: {
+    lineType: string;
+  },
+  defaultLaborAccount: { id: string } | null,
+  defaultOverheadAccount: { id: string } | null,
+  defaultMiscAccount: { id: string } | null,
+  companyId: string
+): Promise<{ success: boolean; accountId?: string; error?: string }> {
+  if (line.lineType === 'MATERIAL') {
+    return { success: false, error: 'Not an expense line' };
+  }
+
+  // For now, use defaults based on line type
+
+  let defaultAccount: { id: string } | null = null;
+  let accountType = '';
+
+  if (line.lineType === 'SERVICE') {
+    defaultAccount = defaultLaborAccount;
+    accountType = 'Labor';
+  } else if (line.lineType === 'OTHER') {
+    // Prefer overhead, fallback to misc
+    defaultAccount = defaultOverheadAccount || defaultMiscAccount;
+    accountType = 'Overhead/Misc';
+  }
+
+  if (!defaultAccount) {
+    const code = line.lineType === 'SERVICE' ? '5020' : '5030 or 5090';
+    return {
+      success: false,
+      error: `Expense account not configured for ${line.lineType}. Please set up account code ${code} (${accountType}).`,
+    };
+  }
+
+  const isLeaf = await isLeafAccount(defaultAccount.id);
+  if (!isLeaf) {
+    return {
+      success: false,
+      error: `Default ${accountType} account is not a leaf account. Please configure a leaf account.`,
+    };
+  }
+
+  return { success: true, accountId: defaultAccount.id };
 }
 
 /**
@@ -70,6 +180,7 @@ export async function buildVoucherFromPurchase(
               inventoryAccount: true,
             },
           },
+          stockItem: true,
         },
       },
       project: true,
@@ -86,7 +197,8 @@ export async function buildVoucherFromPurchase(
   }
 
   // Get default accounts
-  const { apAccount, purchasesAccount } = await getDefaultAccounts(companyId);
+  const { apAccount, materialsAccount, laborAccount, overheadAccount, miscAccount } =
+    await getDefaultAccounts(companyId);
 
   if (!apAccount) {
     return { success: false, error: 'Accounts Payable account (2010) not found' };
@@ -101,61 +213,88 @@ export async function buildVoucherFromPurchase(
   // Build voucher lines
   const lines: VoucherCreateData['lines'] = [];
 
-  // Debit lines: inventory/cost accounts for each purchase line
-  for (const purchaseLine of purchase.lines) {
-    let debitAccountId: string;
+  // Debit lines: accounts for each purchase line based on lineType
+  for (let i = 0; i < purchase.lines.length; i++) {
+    const purchaseLine = purchase.lines[i];
+    const lineType = (purchaseLine.lineType || 'OTHER') as 'MATERIAL' | 'SERVICE' | 'OTHER';
 
-    // Use product's inventory account if set, otherwise default purchases account
-    if (purchaseLine.product.inventoryAccountId) {
-      const invAccount = await prisma.account.findUnique({
-        where: { id: purchaseLine.product.inventoryAccountId },
-      });
-      if (invAccount && invAccount.isActive) {
-        const isLeaf = await isLeafAccount(invAccount.id);
-        if (isLeaf) {
-          debitAccountId = invAccount.id;
-        } else {
-          // Fallback to default if inventory account is not leaf
-          if (!purchasesAccount) {
-            return {
-              success: false,
-              error: 'Default purchases account (5010) not found and product inventory account is not leaf',
-            };
-          }
-          debitAccountId = purchasesAccount.id;
-        }
-      } else {
-        // Fallback to default
-        if (!purchasesAccount) {
-          return {
-            success: false,
-            error: 'Default purchases account (5010) not found',
-          };
-        }
-        debitAccountId = purchasesAccount.id;
-      }
-    } else {
-      // Use default purchases account
-      if (!purchasesAccount) {
+    let debitAccountId: string;
+    let description: string;
+
+    // Determine account and description based on line type
+    if (lineType === 'MATERIAL') {
+      // Get material account
+      const materialAccountResult = await getMaterialAccount(
+        {
+          lineType,
+          product: purchaseLine.product,
+          stockItemId: purchaseLine.stockItemId,
+        },
+        materialsAccount,
+        companyId
+      );
+
+      if (!materialAccountResult.success) {
         return {
           success: false,
-          error: 'Default purchases account (5010) not found',
+          error: `Line ${i + 1} (MATERIAL): ${materialAccountResult.error}`,
         };
       }
-      debitAccountId = purchasesAccount.id;
+      debitAccountId = materialAccountResult.accountId!;
+
+      // Build description
+      const itemName =
+        purchaseLine.stockItem?.name ??
+        purchaseLine.product?.name ??
+        'Unknown material';
+      const unit =
+        purchaseLine.stockItem?.unit ??
+        purchaseLine.product?.unit ??
+        purchaseLine.unit ??
+        '';
+      const qty = Number(purchaseLine.quantity ?? 0);
+      description = qty > 0 ? `${itemName} - ${qty.toFixed(3)} ${unit}` : itemName;
+    } else {
+      // SERVICE or OTHER - use expense account
+      const expenseAccountResult = await getExpenseAccount(
+        {
+          lineType,
+        },
+        laborAccount,
+        overheadAccount,
+        miscAccount,
+        companyId
+      );
+
+      if (!expenseAccountResult.success) {
+        return {
+          success: false,
+          error: `Line ${i + 1} (${lineType}): ${expenseAccountResult.error}`,
+        };
+      }
+      debitAccountId = expenseAccountResult.accountId!;
+
+      // Build description
+      const desc = purchaseLine.description || (lineType === 'SERVICE' ? 'Service' : 'Other expense');
+      description = desc;
     }
 
     // Calculate line amount after discount (proportional)
-    const lineSubtotal = Number(purchaseLine.lineTotal);
-    const discountPercent = purchase.discountPercent
-      ? Number(purchase.discountPercent)
-      : 0;
+    const lineSubtotal = Number(purchaseLine.lineTotal ?? 0);
+    if (lineSubtotal <= 0) {
+      return {
+        success: false,
+        error: `Line ${i + 1}: Amount must be greater than 0`,
+      };
+    }
+
+    const discountPercent = purchase.discountPercent ? Number(purchase.discountPercent) : 0;
     const lineDiscount = (lineSubtotal * discountPercent) / 100;
     const lineTotalAfterDiscount = lineSubtotal - lineDiscount;
 
     lines.push({
       accountId: debitAccountId,
-      description: `${purchaseLine.product.name} - ${Number(purchaseLine.quantity)} ${purchaseLine.product.unit}`,
+      description,
       debit: new Prisma.Decimal(lineTotalAfterDiscount),
       credit: new Prisma.Decimal(0),
       projectId: purchase.projectId,
@@ -391,7 +530,6 @@ export async function createInventoryTxnsForPostedPurchase(
             product: true,
           },
         },
-        warehouse: true,
       },
     });
 
@@ -416,7 +554,6 @@ export async function createInventoryTxnsForPostedPurchase(
           productId: line.productId,
           purchaseId: purchase.id,
           projectId: purchase.projectId,
-          warehouseId: purchase.warehouseId,
           qtyIn: line.quantity,
           qtyOut: new Prisma.Decimal(0),
           unitCost: line.unitPrice,
@@ -449,7 +586,6 @@ export async function createInventoryReversalForPurchase(
             product: true,
           },
         },
-        warehouse: true,
       },
     });
 
@@ -481,7 +617,6 @@ export async function createInventoryReversalForPurchase(
           productId: originalTxn.productId,
           purchaseId: purchase.id,
           projectId: originalTxn.projectId,
-          warehouseId: originalTxn.warehouseId,
           qtyIn: new Prisma.Decimal(0),
           qtyOut: originalTxn.qtyIn, // Reverse the quantity
           unitCost: originalTxn.unitCost,

@@ -219,7 +219,6 @@ export async function POST(request: NextRequest) {
               credit: line.credit,
               projectId: validatedData.expenseType === 'OFFICE_EXPENSE' ? null : (line.projectId || null),
               vendorId: line.vendorId || null,
-              costHeadId: line.costHeadId || null,
               paymentMethodId: line.paymentMethodId || null,
             })),
           },

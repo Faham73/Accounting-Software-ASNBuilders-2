@@ -37,15 +37,15 @@ export async function GET(
         supplierVendor: {
           select: { id: true, name: true, phone: true, address: true },
         },
-        warehouse: {
-          select: { id: true, name: true, type: true },
-        },
         paymentAccount: {
           select: { id: true, code: true, name: true, type: true },
         },
         lines: {
           include: {
             product: {
+              select: { id: true, name: true, unit: true },
+            },
+            stockItem: {
               select: { id: true, name: true, unit: true },
             },
           },
@@ -195,23 +195,6 @@ export async function PUT(
       }
     }
 
-    // Validate warehouse if provided
-    if (validatedData.warehouseId) {
-      const warehouse = await prisma.warehouse.findUnique({
-        where: { id: validatedData.warehouseId },
-      });
-
-      if (!warehouse || warehouse.companyId !== auth.companyId) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: 'Warehouse not found or does not belong to your company',
-          },
-          { status: 400 }
-        );
-      }
-    }
-
     // Validate payment account if provided
     if (validatedData.paymentAccountId) {
       const account = await prisma.account.findUnique({
@@ -229,26 +212,43 @@ export async function PUT(
       }
     }
 
-    // Validate products if lines are provided
+    // Validate stock items and expense heads if lines are provided
     if (validatedData.lines) {
-      const productIds = validatedData.lines.map((line) => line.productId);
-      const products = await prisma.product.findMany({
-        where: {
-          id: { in: productIds },
-          companyId: auth.companyId,
-          isActive: true,
-        },
-      });
+      const materialLines = validatedData.lines.filter((line) => line.lineType === 'MATERIAL');
+      if (materialLines.length > 0) {
+        const stockItemIds = materialLines
+          .map((line) => line.stockItemId)
+          .filter((id): id is string => Boolean(id));
+        
+        if (stockItemIds.length !== materialLines.length) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: 'Stock item is required for all MATERIAL lines',
+            },
+            { status: 400 }
+          );
+        }
 
-      if (products.length !== productIds.length) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: 'One or more products not found, inactive, or do not belong to your company',
+        const stockItems = await prisma.stockItem.findMany({
+          where: {
+            id: { in: stockItemIds },
+            companyId: auth.companyId,
+            isActive: true,
           },
-          { status: 400 }
-        );
+        });
+
+        if (stockItems.length !== stockItemIds.length) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: 'One or more stock items not found, inactive, or do not belong to your company',
+            },
+            { status: 400 }
+          );
+        }
       }
+
     }
 
     // Compute totals server-side if lines are provided
@@ -292,7 +292,6 @@ export async function PUT(
           ...(validatedData.projectId && { projectId: validatedData.projectId }),
           ...(validatedData.subProjectId !== undefined && { subProjectId: validatedData.subProjectId }),
           ...(validatedData.supplierVendorId && { supplierVendorId: validatedData.supplierVendorId }),
-          ...(validatedData.warehouseId && { warehouseId: validatedData.warehouseId }),
           ...(validatedData.reference !== undefined && { reference: validatedData.reference }),
           ...(validatedData.discountPercent !== undefined && {
             discountPercent: validatedData.discountPercent ? new Prisma.Decimal(validatedData.discountPercent) : null,
@@ -304,12 +303,24 @@ export async function PUT(
           ...(validatedData.paymentAccountId !== undefined && { paymentAccountId: validatedData.paymentAccountId }),
           ...(validatedData.lines && {
             lines: {
-              create: validatedData.lines.map((line) => ({
-                productId: line.productId,
-                quantity: new Prisma.Decimal(line.quantity),
-                unitPrice: new Prisma.Decimal(line.unitPrice),
-                lineTotal: new Prisma.Decimal(line.lineTotal),
-              })),
+              create: validatedData.lines.map((line) => {
+                // Compute lineTotal from qty * unitRate if not provided
+                let lineTotal = line.lineTotal;
+                if ((line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') && line.quantity && line.unitRate) {
+                  lineTotal = line.quantity * line.unitRate;
+                }
+
+                return {
+                  lineType: line.lineType,
+                  productId: line.productId || null,
+                  stockItemId: line.stockItemId || null,
+                  quantity: line.quantity ? new Prisma.Decimal(line.quantity) : null,
+                  unit: line.unit || null,
+                  unitRate: line.unitRate ? new Prisma.Decimal(line.unitRate) : null,
+                  description: line.description || null,
+                  lineTotal: new Prisma.Decimal(lineTotal),
+                };
+              }),
             },
           }),
           ...(validatedData.attachments !== undefined && {
@@ -333,12 +344,12 @@ export async function PUT(
           supplierVendor: {
             select: { id: true, name: true },
           },
-          warehouse: {
-            select: { id: true, name: true, type: true },
-          },
           lines: {
             include: {
               product: {
+                select: { id: true, name: true, unit: true },
+              },
+              stockItem: {
                 select: { id: true, name: true, unit: true },
               },
             },

@@ -29,15 +29,15 @@ export default async function PurchaseDetailPage({ params }: { params: { id: str
       supplierVendor: {
         select: { id: true, name: true, phone: true, address: true },
       },
-      warehouse: {
-        select: { id: true, name: true, type: true },
-      },
       paymentAccount: {
         select: { id: true, code: true, name: true, type: true },
       },
       lines: {
         include: {
           product: {
+            select: { id: true, name: true, unit: true, inventoryAccountId: true },
+          },
+          stockItem: {
             select: { id: true, name: true, unit: true },
           },
         },
@@ -156,12 +156,6 @@ export default async function PurchaseDetailPage({ params }: { params: { id: str
               <p className="mt-1 text-sm text-gray-900">{purchase.supplierVendor.name}</p>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-500">Warehouse/Company</label>
-              <p className="mt-1 text-sm text-gray-900">
-                {purchase.warehouse.name} ({purchase.warehouse.type})
-              </p>
-            </div>
-            <div>
               <label className="text-sm font-medium text-gray-500">Reference</label>
               <p className="mt-1 text-sm text-gray-900">{purchase.reference || '-'}</p>
             </div>
@@ -178,34 +172,90 @@ export default async function PurchaseDetailPage({ params }: { params: { id: str
 
         {/* Lines Table */}
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-lg font-medium mb-4">Product Lines</h2>
+          <h2 className="text-lg font-medium mb-4">Line Items</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item/Description</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Price</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit Rate</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {purchase.lines.map((line) => (
-                  <tr key={line.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {line.product.name} ({line.product.unit})
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {Number(line.quantity).toFixed(3)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatCurrency(Number(line.unitPrice))}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {formatCurrency(Number(line.lineTotal))}
-                    </td>
-                  </tr>
-                ))}
+                {purchase.lines.map((line) => {
+                  // Determine item name based on line type
+                  const itemName =
+                    line.lineType === 'MATERIAL'
+                      ? line.stockItem?.name ?? line.product?.name ?? 'Unknown material'
+                      : line.description ?? (line.lineType === 'SERVICE' ? 'Service' : 'Other expense');
+
+                  // Determine unit based on line type
+                  const unit =
+                    line.lineType === 'MATERIAL'
+                      ? line.stockItem?.unit ?? line.product?.unit ?? line.unit ?? ''
+                      : line.unit ?? '';
+
+                  // Check if MATERIAL line is missing both stockItem and product (legacy broken)
+                  const isBrokenMaterial = line.lineType === 'MATERIAL' && !line.stockItem && !line.product;
+
+                  // Safe number conversions
+                  const qty = Number(line.quantity ?? 0);
+                  const unitRate = Number(line.unitRate ?? 0);
+                  const amount = Number(line.lineTotal ?? 0);
+
+                  return (
+                    <tr key={line.id}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            line.lineType === 'MATERIAL'
+                              ? 'bg-blue-100 text-blue-800'
+                              : line.lineType === 'SERVICE'
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {line.lineType}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        <div className="flex items-center space-x-2">
+                          <span>
+                            {itemName}
+                            {unit ? ` (${unit})` : ''}
+                          </span>
+                          {isBrokenMaterial && (
+                            <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800">
+                              Missing item
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {(line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') && qty > 0
+                          ? qty.toFixed(3)
+                          : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {(line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') && unit
+                          ? unit
+                          : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {(line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') && unitRate > 0
+                          ? formatCurrency(unitRate)
+                          : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {formatCurrency(amount)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

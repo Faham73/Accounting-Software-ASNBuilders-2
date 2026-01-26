@@ -8,6 +8,7 @@
 
 import {
   PrismaClient,
+  Prisma,
   UserRole,
   PaymentMethodType,
   AccountType,
@@ -18,6 +19,9 @@ import {
   ExpenseType,
   OverheadAllocationMethod,
   ExpenseSource,
+  StockMovementType,
+  PurchaseLineType,
+  PurchaseStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { faker } from '@faker-js/faker';
@@ -50,7 +54,6 @@ interface SeedContext {
   userIds: string[];
   projectIds: { main: string; subs: string[] };
   vendorIds: string[];
-  costHeadIds: string[];
   paymentMethodIds: string[];
   accountIdsByCode: Record<string, string>;
   voucherNos: Set<string>;
@@ -83,7 +86,6 @@ async function seedCompany(name: string): Promise<SeedContext> {
     userIds: [],
     projectIds: { main: '', subs: [] },
     vendorIds: [],
-    costHeadIds: [],
     paymentMethodIds: [],
     accountIdsByCode: {},
     voucherNos: new Set(),
@@ -190,34 +192,6 @@ async function seedCompany(name: string): Promise<SeedContext> {
     ctx.vendorIds.push(v.id);
   }
 
-  const costHeads: { name: string; code: string; category: ProjectCostCategory }[] = [
-    { name: 'Cement', code: 'CH01', category: ProjectCostCategory.MATERIALS },
-    { name: 'Steel', code: 'CH02', category: ProjectCostCategory.MATERIALS },
-    { name: 'Bricks', code: 'CH03', category: ProjectCostCategory.MATERIALS },
-    { name: 'Sand', code: 'CH04', category: ProjectCostCategory.MATERIALS },
-    { name: 'Labor – Civil', code: 'CH05', category: ProjectCostCategory.CIVIL },
-    { name: 'Labor – Mason', code: 'CH06', category: ProjectCostCategory.CIVIL },
-    { name: 'Matí Kata', code: 'CH07', category: ProjectCostCategory.MATI_KATA },
-    { name: 'Dhalai', code: 'CH08', category: ProjectCostCategory.DHALAI },
-    { name: 'Transport', code: 'CH09', category: ProjectCostCategory.OTHERS },
-    { name: 'Equipment', code: 'CH10', category: ProjectCostCategory.OTHERS },
-    { name: 'Electrical', code: 'CH11', category: ProjectCostCategory.OTHERS },
-    { name: 'Plumbing', code: 'CH12', category: ProjectCostCategory.OTHERS },
-  ];
-
-  for (const ch of costHeads) {
-    const c = await prisma.costHead.upsert({
-      where: { companyId_name: { companyId: company.id, name: ch.name } },
-      update: {},
-      create: { companyId: company.id, name: ch.name, code: ch.code, isActive: true },
-    });
-    ctx.costHeadIds.push(c.id);
-    await prisma.projectCostCategoryMap.upsert({
-      where: { companyId_costHeadId: { companyId: company.id, costHeadId: c.id } },
-      update: { category: ch.category },
-      create: { companyId: company.id, costHeadId: c.id, category: ch.category, isActive: true },
-    });
-  }
 
   const paymentMethods: { name: string; type: PaymentMethodType }[] = [
     { name: 'Cash', type: PaymentMethodType.CASH },
@@ -283,7 +257,6 @@ async function seedCompany(name: string): Promise<SeedContext> {
   const creator = () => faker.helpers.arrayElement(ctx.userIds);
   const pickProject = () => (faker.number.float({ min: 0, max: 1 }) < 0.6 ? faker.helpers.arrayElement(allProjectIds) : null);
   const pickVendor = () => faker.helpers.arrayElement(ctx.vendorIds);
-  const pickCostHead = () => faker.helpers.arrayElement(ctx.costHeadIds);
   const pickPaymentMethod = () => faker.helpers.arrayElement(ctx.paymentMethodIds);
 
   const existingVouchers = await prisma.voucher.findMany({
@@ -353,7 +326,7 @@ async function seedCompany(name: string): Promise<SeedContext> {
 
     let debitTotal = 0;
     let creditTotal = 0;
-    const lines: { accountId: string; debit: number; credit: number; description?: string; projectId?: string; vendorId?: string; costHeadId?: string; paymentMethodId?: string }[] = [];
+    const lines: { accountId: string; debit: number; credit: number; description?: string; projectId?: string; vendorId?: string; paymentMethodId?: string }[] = [];
 
     let journalApVendorId: string | null = null;
     let journalApAmount = 0;
@@ -361,7 +334,7 @@ async function seedCompany(name: string): Promise<SeedContext> {
       const amt = faker.number.int({ min: 5000, max: 50000 });
       journalApVendorId = pickVendor();
       journalApAmount = amt;
-      lines.push({ accountId: getAccount('5010'), debit: amt, credit: 0, description: 'Materials', projectId, vendorId: journalApVendorId, costHeadId: pickCostHead() });
+      lines.push({ accountId: getAccount('5010'), debit: amt, credit: 0, description: 'Materials', projectId, vendorId: journalApVendorId });
       lines.push({ accountId: getAccount('2010'), debit: 0, credit: amt, vendorId: journalApVendorId });
       debitTotal += amt;
       creditTotal += amt;
@@ -404,7 +377,6 @@ async function seedCompany(name: string): Promise<SeedContext> {
           description: ln.description,
           projectId: ln.projectId ?? null,
           vendorId: ln.vendorId ?? null,
-          costHeadId: ln.costHeadId ?? null,
           paymentMethodId: ln.paymentMethodId ?? null,
         },
       });
@@ -474,7 +446,6 @@ async function seedCompany(name: string): Promise<SeedContext> {
           description: `Rev: ${ol.description ?? ''}`,
           projectId: ol.projectId,
           vendorId: ol.vendorId,
-          costHeadId: ol.costHeadId,
           paymentMethodId: ol.paymentMethodId,
         },
       });
@@ -705,6 +676,476 @@ async function seedCompany(name: string): Promise<SeedContext> {
     });
   }
 
+  // Seed stock items
+  const stockItemsData = [
+    { name: 'Cement', sku: 'STK-CEM-001', unit: 'bag', category: 'Construction Materials', reorderLevel: 50 },
+    { name: 'Steel Rod', sku: 'STK-STL-001', unit: 'kg', category: 'Construction Materials', reorderLevel: 500 },
+    { name: 'Sand', sku: 'STK-SND-001', unit: 'cft', category: 'Construction Materials', reorderLevel: 100 },
+    { name: 'Brick', sku: 'STK-BRK-001', unit: 'pcs', category: 'Construction Materials', reorderLevel: 1000 },
+    { name: 'Stone Chips', sku: 'STK-STC-001', unit: 'cft', category: 'Construction Materials', reorderLevel: 50 },
+    { name: 'Paint', sku: 'STK-PNT-001', unit: 'liter', category: 'Finishing Materials', reorderLevel: 20 },
+    { name: 'Tiles', sku: 'STK-TIL-001', unit: 'sqft', category: 'Finishing Materials', reorderLevel: 200 },
+    { name: 'PVC Pipe', sku: 'STK-PVC-001', unit: 'ft', category: 'Plumbing', reorderLevel: 100 },
+    { name: 'Electrical Wire', sku: 'STK-ELC-001', unit: 'meter', category: 'Electrical', reorderLevel: 200 },
+    { name: 'Wood', sku: 'STK-WOD-001', unit: 'cft', category: 'Construction Materials', reorderLevel: 30 },
+    { name: 'Nails', sku: 'STK-NAI-001', unit: 'kg', category: 'Hardware', reorderLevel: 10 },
+    { name: 'Screws', sku: 'STK-SCR-001', unit: 'kg', category: 'Hardware', reorderLevel: 5 },
+  ];
+
+  const stockItemIds: string[] = [];
+  for (const itemData of stockItemsData) {
+    const existing = await prisma.stockItem.findFirst({
+      where: {
+        companyId: company.id,
+        name: itemData.name,
+      },
+    });
+
+    let stockItem;
+    if (existing) {
+      stockItem = existing;
+    } else {
+      stockItem = await prisma.stockItem.create({
+        data: {
+          companyId: company.id,
+          name: itemData.name,
+          sku: itemData.sku,
+          unit: itemData.unit,
+          category: itemData.category,
+          reorderLevel: itemData.reorderLevel ? new Prisma.Decimal(itemData.reorderLevel) : null,
+          isActive: true,
+        },
+      });
+
+      // Create initial balance
+      await prisma.stockBalance.create({
+        data: {
+          companyId: company.id,
+          stockItemId: stockItem.id,
+          onHandQty: new Prisma.Decimal(0),
+          avgCost: new Prisma.Decimal(0),
+        },
+      });
+    }
+    stockItemIds.push(stockItem.id);
+  }
+
+  // Create some stock movements (IN) to populate balances
+  const userId = ctx.userIds[0]; // Use first user
+  const stockNow = new Date();
+  const past30 = new Date(stockNow.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  // Create IN movements for some items
+  for (let i = 0; i < Math.min(8, stockItemIds.length); i++) {
+    const stockItemId = stockItemIds[i];
+    const itemData = stockItemsData[i];
+    
+    // Create 1-3 IN movements per item
+    const numMovements = faker.number.int({ min: 1, max: 3 });
+    
+    for (let j = 0; j < numMovements; j++) {
+      const qty = faker.number.float({ min: 10, max: 100, fractionDigits: 3 });
+      const unitCost = faker.number.float({ min: 50, max: 500, fractionDigits: 2 });
+      const movementDate = faker.date.between({ from: past30, to: stockNow });
+
+      // Check if movement already exists (idempotency)
+      const existing = await prisma.stockMovement.findFirst({
+        where: {
+          companyId: company.id,
+          stockItemId,
+          type: 'IN',
+          referenceType: 'SEED',
+        },
+      });
+
+      if (!existing) {
+        // Create movement and update balance
+        await prisma.$transaction(async (tx) => {
+          // Create movement
+          const movement = await tx.stockMovement.create({
+            data: {
+              companyId: company.id,
+              stockItemId,
+              movementDate,
+              type: StockMovementType.IN,
+              qty: new Prisma.Decimal(qty),
+              unitCost: new Prisma.Decimal(unitCost),
+              referenceType: 'SEED',
+              referenceId: `seed-${stockItemId}-${j}`,
+              notes: 'Seed data',
+              createdById: userId,
+            },
+          });
+
+          // Update balance
+          const balance = await tx.stockBalance.findUnique({
+            where: {
+              companyId_stockItemId: {
+                companyId: company.id,
+                stockItemId,
+              },
+            },
+          });
+
+          if (balance) {
+            const newQty = balance.onHandQty.plus(qty);
+            const newAvgCost = balance.onHandQty.gt(0)
+              ? balance.onHandQty.mul(balance.avgCost).plus(new Prisma.Decimal(qty).mul(unitCost)).div(newQty)
+              : new Prisma.Decimal(unitCost);
+
+            await tx.stockBalance.update({
+              where: { id: balance.id },
+              data: {
+                onHandQty: newQty,
+                avgCost: newAvgCost,
+              },
+            });
+          }
+        });
+      }
+    }
+  }
+
+  // Create a few OUT movements
+  for (let i = 0; i < Math.min(3, stockItemIds.length); i++) {
+    const stockItemId = stockItemIds[i];
+    
+    // Get current balance
+    const balance = await prisma.stockBalance.findUnique({
+      where: {
+        companyId_stockItemId: {
+          companyId: company.id,
+          stockItemId,
+        },
+      },
+    });
+
+    if (balance && balance.onHandQty.gt(0)) {
+      const availableQty = Number(balance.onHandQty);
+      const qty = faker.number.float({ min: 1, max: Math.min(availableQty * 0.3, 20), fractionDigits: 3 });
+      const movementDate = faker.date.between({ from: past30, to: stockNow });
+      const projectId = faker.helpers.arrayElement([ctx.projectIds.main, ...ctx.projectIds.subs]);
+
+      // Check if movement already exists
+      const existing = await prisma.stockMovement.findFirst({
+        where: {
+          companyId: company.id,
+          stockItemId,
+          type: 'OUT',
+          referenceType: 'SEED',
+        },
+      });
+
+      if (!existing && qty > 0) {
+        await prisma.$transaction(async (tx) => {
+          // Create movement
+          await tx.stockMovement.create({
+            data: {
+              companyId: company.id,
+              stockItemId,
+              movementDate,
+              type: StockMovementType.OUT,
+              qty: new Prisma.Decimal(qty),
+              referenceType: 'SEED',
+              referenceId: `seed-out-${stockItemId}`,
+              projectId,
+              notes: 'Seed data - stock issue',
+              createdById: userId,
+            },
+          });
+
+          // Update balance
+          const updatedBalance = await tx.stockBalance.findUnique({
+            where: {
+              companyId_stockItemId: {
+                companyId: company.id,
+                stockItemId,
+              },
+            },
+          });
+
+          if (updatedBalance) {
+            await tx.stockBalance.update({
+              where: { id: updatedBalance.id },
+              data: {
+                onHandQty: updatedBalance.onHandQty.minus(qty),
+              },
+            });
+          }
+        });
+      }
+    }
+  }
+
+  // Seed purchases with mixed line types (MATERIAL, SERVICE, OTHER)
+  if (stockItemIds.length > 0 && ctx.vendorIds.length > 0) {
+    const purchaseCount = 2;
+
+    for (let i = 0; i < purchaseCount; i++) {
+      const date = faker.date.between({ from: past90, to: now });
+      const projectId = ctx.projectIds.main;
+      const subProjectId = faker.helpers.arrayElement([...ctx.projectIds.subs, null]);
+      const vendorId = faker.helpers.arrayElement(ctx.vendorIds);
+      const challanNo = `CH-${String(i + 1).padStart(4, '0')}`;
+      const discountPercent = faker.number.float({ min: 0, max: 5, fractionDigits: 2 });
+
+      // Create purchase with mixed line types
+      const purchase = await prisma.purchase.create({
+        data: {
+          companyId: company.id,
+          date,
+          challanNo,
+          projectId,
+          subProjectId,
+          supplierVendorId: vendorId,
+          reference: `Purchase ${i + 1}`,
+          discountPercent: discountPercent > 0 ? new Prisma.Decimal(discountPercent) : null,
+          subtotal: new Prisma.Decimal(0), // Will be computed
+          total: new Prisma.Decimal(0), // Will be computed
+          paidAmount: new Prisma.Decimal(0),
+          dueAmount: new Prisma.Decimal(0),
+          status: PurchaseStatus.DRAFT,
+          lines: {
+            create: [
+              // MATERIAL line
+              {
+                lineType: PurchaseLineType.MATERIAL,
+                stockItemId: faker.helpers.arrayElement(stockItemIds),
+                quantity: new Prisma.Decimal(faker.number.float({ min: 10, max: 100, fractionDigits: 3 })),
+                unit: 'bag', // Default unit, will be set from stockItem
+                unitRate: new Prisma.Decimal(faker.number.float({ min: 50, max: 500, fractionDigits: 2 })),
+                lineTotal: new Prisma.Decimal(0), // Will be computed
+              },
+              // SERVICE line
+              {
+                lineType: PurchaseLineType.SERVICE,
+                description: 'Mason labor',
+                quantity: new Prisma.Decimal(faker.number.float({ min: 1, max: 10, fractionDigits: 1 })),
+                unit: 'day',
+                unitRate: new Prisma.Decimal(faker.number.float({ min: 500, max: 2000, fractionDigits: 2 })),
+                lineTotal: new Prisma.Decimal(0), // Will be computed
+              },
+              // OTHER line
+              {
+                lineType: PurchaseLineType.OTHER,
+                description: 'Transport cost',
+                lineTotal: new Prisma.Decimal(faker.number.float({ min: 500, max: 3000, fractionDigits: 2 })),
+              },
+            ],
+          },
+        },
+        include: { lines: true },
+      });
+
+      // Compute line totals and purchase totals
+      const lines = purchase.lines;
+      const computedLines = lines.map((line) => {
+        let lineTotal = line.lineTotal;
+        if (line.lineType === PurchaseLineType.MATERIAL || line.lineType === PurchaseLineType.SERVICE) {
+          if (line.quantity && line.unitRate) {
+            lineTotal = line.quantity.mul(line.unitRate);
+          }
+        }
+        return { ...line, lineTotal };
+      });
+
+      // Update lines with computed totals
+      for (const line of computedLines) {
+        if (!line.lineTotal.equals(purchase.lines.find((l) => l.id === line.id)!.lineTotal)) {
+          await prisma.purchaseLine.update({
+            where: { id: line.id },
+            data: { lineTotal: line.lineTotal },
+          });
+        }
+      }
+
+      // Compute purchase totals
+      const subtotal = computedLines.reduce((sum, line) => sum.plus(line.lineTotal), new Prisma.Decimal(0));
+      const discount = discountPercent > 0 ? subtotal.mul(discountPercent).div(100) : new Prisma.Decimal(0);
+      const total = subtotal.minus(discount);
+      const paidAmount = new Prisma.Decimal(0);
+      const dueAmount = total;
+
+      await prisma.purchase.update({
+        where: { id: purchase.id },
+        data: {
+          subtotal,
+          total,
+          paidAmount,
+          dueAmount,
+        },
+      });
+    }
+
+    // POST the first purchase with MATERIAL lines to create stock movements
+    if (i === 0) {
+      // Reload purchase with MATERIAL lines and related data
+      const purchaseToPost = await prisma.purchase.findUnique({
+        where: {
+          id: purchase.id,
+          companyId: company.id,
+        },
+        include: {
+          lines: {
+            where: {
+              lineType: PurchaseLineType.MATERIAL,
+              stockItemId: { not: null },
+              quantity: { gt: 0 },
+            },
+            include: {
+              stockItem: true,
+            },
+          },
+          supplierVendor: true,
+        },
+      });
+
+      if (purchaseToPost && purchaseToPost.lines.length > 0) {
+        // Create voucher for this purchase
+        const voucherNo = nextVoucherNo(ctx, 'JV');
+        const userId = ctx.userIds[0];
+        const apAccountId = ctx.accountIdsByCode['2010'];
+        const materialsAccountId = ctx.accountIdsByCode['5010'];
+
+        if (apAccountId && materialsAccountId) {
+          // Build voucher lines
+          const voucherLines: any[] = [];
+          let totalDebit = new Prisma.Decimal(0);
+
+          for (const line of purchaseToPost.lines) {
+            if (line.lineType === PurchaseLineType.MATERIAL && line.stockItemId && line.quantity && line.quantity.gt(0)) {
+              const lineTotal = line.lineTotal || (line.quantity.mul(line.unitRate || 0));
+              voucherLines.push({
+                companyId: company.id,
+                accountId: materialsAccountId,
+                description: `${line.stockItem?.name || 'Material'} - ${line.quantity.toString()} ${line.stockItem?.unit || ''}`,
+                debit: lineTotal,
+                credit: new Prisma.Decimal(0),
+                projectId: purchaseToPost.projectId,
+                vendorId: purchaseToPost.supplierVendorId,
+              });
+              totalDebit = totalDebit.plus(lineTotal);
+            }
+          }
+
+          // Add AP credit line
+          voucherLines.push({
+            companyId: company.id,
+            accountId: apAccountId,
+            description: `Accounts Payable - ${purchaseToPost.supplierVendor.name} - ${purchaseToPost.challanNo || purchaseToPost.id}`,
+            debit: new Prisma.Decimal(0),
+            credit: totalDebit,
+            vendorId: purchaseToPost.supplierVendorId,
+          });
+
+          // Create and POST the voucher
+          const voucher = await prisma.voucher.create({
+            data: {
+              companyId: company.id,
+              projectId: purchaseToPost.projectId,
+              voucherNo,
+              type: VoucherType.JOURNAL,
+              date: purchaseToPost.date,
+              status: VoucherStatus.POSTED,
+              narration: `Purchase: ${purchaseToPost.challanNo || 'N/A'} - ${purchaseToPost.supplierVendor.name}`,
+              expenseType: ExpenseType.PROJECT_EXPENSE,
+              createdByUserId: userId,
+              postedByUserId: userId,
+              postedAt: purchaseToPost.date,
+              lines: {
+                create: voucherLines,
+              },
+            },
+          });
+
+          // Link purchase to voucher and set status to POSTED
+          await prisma.purchase.update({
+            where: { id: purchaseToPost.id },
+            data: {
+              voucherId: voucher.id,
+              status: PurchaseStatus.POSTED,
+            },
+          });
+
+          // Create stock movements for MATERIAL lines
+          for (const line of purchaseToPost.lines) {
+            if (line.lineType === PurchaseLineType.MATERIAL && line.stockItemId && line.quantity && line.quantity.gt(0)) {
+              // Check if movement already exists
+              const existing = await prisma.stockMovement.findFirst({
+                where: {
+                  companyId: company.id,
+                  stockItemId: line.stockItemId,
+                  type: StockMovementType.IN,
+                  referenceType: 'PURCHASE_VOUCHER',
+                  referenceId: purchaseToPost.id,
+                },
+              });
+
+              if (!existing) {
+                const unitCost = line.unitRate || (line.lineTotal && line.quantity ? line.lineTotal.div(line.quantity) : new Prisma.Decimal(0));
+
+                // Get or create balance
+                let balance = await prisma.stockBalance.findUnique({
+                  where: {
+                    companyId_stockItemId: {
+                      companyId: company.id,
+                      stockItemId: line.stockItemId,
+                    },
+                  },
+                });
+
+                if (!balance) {
+                  balance = await prisma.stockBalance.create({
+                    data: {
+                      companyId: company.id,
+                      stockItemId: line.stockItemId,
+                      onHandQty: new Prisma.Decimal(0),
+                      avgCost: new Prisma.Decimal(0),
+                    },
+                  });
+                }
+
+                // Create movement
+                await prisma.stockMovement.create({
+                  data: {
+                    companyId: company.id,
+                    stockItemId: line.stockItemId,
+                    movementDate: purchaseToPost.date,
+                    type: StockMovementType.IN,
+                    qty: line.quantity,
+                    unitCost: unitCost,
+                    referenceType: 'PURCHASE_VOUCHER',
+                    referenceId: purchaseToPost.id,
+                    projectId: purchaseToPost.projectId,
+                    vendorId: purchaseToPost.supplierVendorId,
+                    notes: `Purchase: ${purchaseToPost.challanNo || purchaseToPost.id}`,
+                    createdById: userId,
+                  },
+                });
+
+                // Update balance
+                const newOnHandQty = balance.onHandQty.plus(line.quantity);
+                const newAvgCost = balance.onHandQty.gt(0)
+                  ? balance.onHandQty.mul(balance.avgCost).plus(line.quantity.mul(unitCost)).div(newOnHandQty)
+                  : unitCost;
+
+                await prisma.stockBalance.update({
+                  where: { id: balance.id },
+                  data: {
+                    onHandQty: newOnHandQty,
+                    avgCost: newAvgCost,
+                  },
+                });
+              }
+            }
+          }
+
+          console.log(`✅ Posted purchase ${purchaseToPost.challanNo || purchaseToPost.id} with ${purchaseToPost.lines.length} MATERIAL line(s)`);
+        }
+      }
+    }
+  }
+
   return ctx;
 }
 
@@ -721,6 +1162,8 @@ async function main() {
   const totalUsers = companies.reduce((s, c) => s + c.ctx.userIds.length, 0);
   const totalProjects = companies.reduce((s, c) => s + 1 + c.ctx.projectIds.subs.length, 0);
   const totalVouchers = await prisma.voucher.count();
+  const totalStockItems = await prisma.stockItem.count();
+  const totalStockMovements = await prisma.stockMovement.count();
 
   console.log('\n✅ Seed complete.\n');
   console.log('Summary:');
@@ -728,6 +1171,8 @@ async function main() {
   console.log(`  Users: ${totalUsers} (password: ${PASSWORD})`);
   console.log(`  Projects: ${totalProjects} (1 main + 3 sub per company)`);
   console.log(`  Vouchers: ${totalVouchers}`);
+  console.log(`  Stock Items: ${totalStockItems}`);
+  console.log(`  Stock Movements: ${totalStockMovements}`);
   console.log('\nRun `npx prisma db seed` or `npm run db:seed` to re-seed.');
 }
 

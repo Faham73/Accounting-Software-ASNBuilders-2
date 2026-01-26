@@ -50,7 +50,6 @@ export async function GET(
       from: searchParams.get('from') || undefined,
       to: searchParams.get('to') || undefined,
       vendorId: searchParams.get('vendorId') || undefined,
-      costHeadId: searchParams.get('costHeadId') || undefined,
       category: searchParams.get('category') || undefined,
       paymentMethodId: searchParams.get('paymentMethodId') || undefined,
       accountId: searchParams.get('accountId') || undefined,
@@ -98,9 +97,6 @@ export async function GET(
     if (filters.vendorId) {
       where.vendorId = filters.vendorId;
     }
-    if (filters.costHeadId) {
-      where.costHeadId = filters.costHeadId;
-    }
     if (filters.paymentMethodId) {
       where.paymentMethodId = filters.paymentMethodId;
     }
@@ -115,18 +111,6 @@ export async function GET(
       where.credit = { gt: 0 };
     }
 
-    // Category filter (requires join with ProjectCostCategoryMap)
-    if (filters.category) {
-      where.costHead = {
-        projectCostCategoryMaps: {
-          some: {
-            companyId: auth.companyId,
-            category: filters.category,
-            isActive: true,
-          },
-        },
-      };
-    }
 
     const skip = (filters.page - 1) * filters.pageSize;
     const take = filters.pageSize;
@@ -165,12 +149,6 @@ export async function GET(
               name: true,
             },
           },
-          costHead: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
           paymentMethod: {
             select: {
               id: true,
@@ -194,29 +172,6 @@ export async function GET(
     const totalDebit = Number(totalsResult._sum.debit || 0);
     const totalCredit = Number(totalsResult._sum.credit || 0);
 
-    // Get category mapping for each line (if costHead exists)
-    const costHeadIds = lines
-      .map((line) => line.costHeadId)
-      .filter((id): id is string => id !== null);
-
-    const categoryMaps = costHeadIds.length > 0
-      ? await prisma.projectCostCategoryMap.findMany({
-          where: {
-            companyId: auth.companyId,
-            costHeadId: { in: costHeadIds },
-            isActive: true,
-          },
-          select: {
-            costHeadId: true,
-            category: true,
-          },
-        })
-      : [];
-
-    const categoryMapByCostHead = new Map(
-      categoryMaps.map((map) => [map.costHeadId, map.category])
-    );
-
     // Format response rows
     const rows = lines.map((line) => ({
       voucherId: line.voucher.id,
@@ -232,11 +187,7 @@ export async function GET(
       credit: Number(line.credit),
       vendorId: line.vendor?.id || null,
       vendorName: line.vendor?.name || null,
-      costHeadId: line.costHead?.id || null,
-      costHeadName: line.costHead?.name || null,
-      category: line.costHeadId
-        ? categoryMapByCostHead.get(line.costHeadId) || 'OTHERS'
-        : 'OTHERS',
+      category: 'OTHERS',
       paymentMethodId: line.paymentMethod?.id || null,
       paymentMethodName: line.paymentMethod?.name || null,
       description: line.description,
@@ -253,7 +204,6 @@ export async function GET(
           from: filters.from,
           to: filters.to,
           vendorId: filters.vendorId,
-          costHeadId: filters.costHeadId,
           category: filters.category,
           paymentMethodId: filters.paymentMethodId,
           accountId: filters.accountId,

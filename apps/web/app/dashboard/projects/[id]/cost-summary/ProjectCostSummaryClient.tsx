@@ -38,7 +38,6 @@ export default function ProjectCostSummaryClient({
     from: '',
     to: '',
     vendorId: '',
-    costHeadId: '',
     category: '',
     paymentMethodId: '',
     includeAllocatedOverhead: false,
@@ -46,7 +45,6 @@ export default function ProjectCostSummaryClient({
 
   // Filter options
   const [vendors, setVendors] = useState<FilterOption[]>([]);
-  const [costHeads, setCostHeads] = useState<FilterOption[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<FilterOption[]>([]);
 
   const fetchCostSummary = async () => {
@@ -56,7 +54,6 @@ export default function ProjectCostSummaryClient({
       if (filters.from) params.append('from', filters.from);
       if (filters.to) params.append('to', filters.to);
       if (filters.vendorId) params.append('vendorId', filters.vendorId);
-      if (filters.costHeadId) params.append('costHeadId', filters.costHeadId);
       if (filters.category) params.append('category', filters.category);
       if (filters.paymentMethodId) params.append('paymentMethodId', filters.paymentMethodId);
       if (filters.includeAllocatedOverhead) params.append('includeAllocatedOverhead', 'true');
@@ -80,19 +77,14 @@ export default function ProjectCostSummaryClient({
   useEffect(() => {
     const fetchOptions = async () => {
       try {
-        const [vendorsRes, costHeadsRes, paymentMethodsRes] = await Promise.all([
+        const [vendorsRes, paymentMethodsRes] = await Promise.all([
           fetch('/api/vendors?active=true'),
-          fetch('/api/cost-heads?active=true'),
           fetch('/api/payment-methods?active=true'),
         ]);
 
         if (vendorsRes.ok) {
           const vendorsData = await vendorsRes.json();
           setVendors(vendorsData.data || []);
-        }
-        if (costHeadsRes.ok) {
-          const costHeadsData = await costHeadsRes.json();
-          setCostHeads(costHeadsData.data || []);
         }
         if (paymentMethodsRes.ok) {
           const paymentMethodsData = await paymentMethodsRes.json();
@@ -115,7 +107,6 @@ export default function ProjectCostSummaryClient({
       from: '',
       to: '',
       vendorId: '',
-      costHeadId: '',
       category: '',
       paymentMethodId: '',
       includeAllocatedOverhead: false,
@@ -188,21 +179,6 @@ export default function ProjectCostSummaryClient({
               {vendors.map((vendor) => (
                 <option key={vendor.id} value={vendor.id}>
                   {vendor.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cost Head</label>
-            <select
-              value={filters.costHeadId}
-              onChange={(e) => setFilters({ ...filters, costHeadId: e.target.value })}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-            >
-              <option value="">All Cost Heads</option>
-              {costHeads.map((ch) => (
-                <option key={ch.id} value={ch.id}>
-                  {ch.name}
                 </option>
               ))}
             </select>

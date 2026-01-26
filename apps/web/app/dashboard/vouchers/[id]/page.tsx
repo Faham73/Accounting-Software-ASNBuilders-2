@@ -51,7 +51,6 @@ export default async function VoucherDetailPage({ params }: { params: { id: stri
           vendor: {
             select: { id: true, name: true },
           },
-          costHead: {
             select: { id: true, name: true },
           },
           paymentMethod: {

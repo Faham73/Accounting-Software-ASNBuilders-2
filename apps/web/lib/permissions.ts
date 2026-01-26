@@ -9,7 +9,7 @@ export type UserRole =
   | 'DATA_ENTRY'
   | 'VIEWER';
 
-export type Resource = 'companies' | 'projects' | 'vendors' | 'costHeads' | 'paymentMethods' | 'chartOfAccounts' | 'vouchers' | 'purchases' | 'products' | 'warehouses' | 'expenses';
+export type Resource = 'companies' | 'projects' | 'vendors' | 'paymentMethods' | 'chartOfAccounts' | 'vouchers' | 'purchases' | 'products' | 'expenses' | 'stock';
 export type Action = 'READ' | 'WRITE' | 'POST' | 'APPROVE';
 
 /**
@@ -25,10 +25,6 @@ export const permissions: Record<Resource, Partial<Record<Action, UserRole[]>>> 
     WRITE: ['ADMIN', 'ACCOUNTANT'],
   },
   vendors: {
-    READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
-    WRITE: ['ADMIN', 'ACCOUNTANT'],
-  },
-  costHeads: {
     READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
     WRITE: ['ADMIN', 'ACCOUNTANT'],
   },
@@ -54,11 +50,11 @@ export const permissions: Record<Resource, Partial<Record<Action, UserRole[]>>> 
     READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
     WRITE: ['ADMIN', 'ACCOUNTANT'],
   },
-  warehouses: {
+  expenses: {
     READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
     WRITE: ['ADMIN', 'ACCOUNTANT'],
   },
-  expenses: {
+  stock: {
     READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
     WRITE: ['ADMIN', 'ACCOUNTANT'],
   },

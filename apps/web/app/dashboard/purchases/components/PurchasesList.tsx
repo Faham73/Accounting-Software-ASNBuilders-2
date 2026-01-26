@@ -16,8 +16,8 @@ interface Purchase {
   project: { id: string; name: string };
   subProject: { id: string; name: string } | null;
   supplierVendor: { id: string; name: string };
-  warehouse: { id: string; name: string; type: string };
   voucher: { id: string; voucherNo: string } | null;
+  lines: Array<{ lineType: 'MATERIAL' | 'SERVICE' | 'OTHER' }>;
   _count: { attachments: number };
 }
 
@@ -189,7 +189,6 @@ export default function PurchasesList({ canWrite }: PurchasesListProps) {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sub Project</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Challan No</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Warehouse</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Price</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
@@ -223,7 +222,19 @@ export default function PurchasesList({ canWrite }: PurchasesListProps) {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {purchase.project.name}
+                      <div className="flex items-center space-x-2">
+                        <span>{purchase.project.name}</span>
+                        {purchase.lines.some((l) => l.lineType === 'MATERIAL') && (
+                          <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                            Material
+                          </span>
+                        )}
+                        {purchase.lines.some((l) => l.lineType === 'SERVICE') && (
+                          <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
+                            Service
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {purchase.subProject?.name || '-'}
@@ -233,9 +244,6 @@ export default function PurchasesList({ canWrite }: PurchasesListProps) {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {purchase.supplierVendor.name}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {purchase.warehouse.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {purchase.reference || '-'}

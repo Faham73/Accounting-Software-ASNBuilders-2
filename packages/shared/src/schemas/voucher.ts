@@ -15,7 +15,6 @@ export const VoucherLineCreateSchema = z.object({
   credit: z.number().nonnegative('Credit must be non-negative').default(0),
   projectId: z.string().optional().nullable(),
   vendorId: z.string().optional().nullable(),
-  costHeadId: z.string().optional().nullable(),
   paymentMethodId: z.string().optional().nullable(),
 }).refine(
   (data) => data.debit > 0 || data.credit > 0,

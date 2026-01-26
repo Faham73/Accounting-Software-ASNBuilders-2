@@ -1,35 +1,35 @@
 import { redirect } from 'next/navigation';
 import { requirePermissionServer } from '@/lib/rbac';
 import { can } from '@/lib/permissions';
-import DashboardLayout from '../components/DashboardLayout';
+import DashboardLayout from '../../components/DashboardLayout';
 import Link from 'next/link';
-import WarehousesList from './components/WarehousesList';
+import StockItemsList from './components/StockItemsList';
 
-export default async function WarehousesPage() {
+export default async function StockItemsPage() {
   let auth;
   try {
-    auth = await requirePermissionServer('warehouses', 'READ');
+    auth = await requirePermissionServer('stock', 'READ');
   } catch {
     redirect('/forbidden');
   }
 
-  const canWrite = can(auth.role, 'warehouses', 'WRITE');
+  const canWrite = can(auth.role, 'stock', 'WRITE');
 
   return (
     <DashboardLayout
-      title="Warehouses"
+      title="Stock Items"
       actions={
         canWrite ? (
           <Link
-            href="/dashboard/warehouses/new"
+            href="/dashboard/stock/items/new"
             className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
           >
-            New Warehouse
+            New Stock Item
           </Link>
         ) : null
       }
     >
-      <WarehousesList canWrite={canWrite} />
+      <StockItemsList canWrite={canWrite} />
     </DashboardLayout>
   );
 }

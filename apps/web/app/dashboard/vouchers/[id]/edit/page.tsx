@@ -26,7 +26,6 @@ export default async function EditVoucherPage({
           account: { select: { id: true, code: true, name: true, type: true } },
           project: { select: { id: true, name: true } },
           vendor: { select: { id: true, name: true } },
-          costHead: { select: { id: true, name: true } },
           paymentMethod: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: 'asc' as const },

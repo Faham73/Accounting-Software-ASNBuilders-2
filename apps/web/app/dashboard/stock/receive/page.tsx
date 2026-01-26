@@ -1,18 +1,18 @@
 import { redirect } from 'next/navigation';
 import { requirePermissionServer } from '@/lib/rbac';
 import DashboardLayout from '../../components/DashboardLayout';
-import WarehouseForm from '../components/WarehouseForm';
+import ReceiveStockForm from './components/ReceiveStockForm';
 
-export default async function NewWarehousePage() {
+export default async function ReceiveStockPage() {
   try {
-    await requirePermissionServer('warehouses', 'WRITE');
+    await requirePermissionServer('stock', 'WRITE');
   } catch {
     redirect('/forbidden');
   }
 
   return (
-    <DashboardLayout title="New Warehouse">
-      <WarehouseForm />
+    <DashboardLayout title="Receive Stock (IN)">
+      <ReceiveStockForm />
     </DashboardLayout>
   );
 }

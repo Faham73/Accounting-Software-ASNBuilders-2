@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import {
   requirePermission,
   createErrorResponse,
@@ -41,6 +42,13 @@ export async function POST(
       after: { voucherId: result.voucherId },
       request,
     });
+
+    // Revalidate purchase pages
+    revalidatePath(`/dashboard/purchases/${params.id}`);
+    revalidatePath('/dashboard/purchases');
+    if (result.voucherId) {
+      revalidatePath(`/dashboard/vouchers/${result.voucherId}`);
+    }
 
     return NextResponse.json({
       ok: true,

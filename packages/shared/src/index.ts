@@ -30,14 +30,6 @@ export {
   type VendorUpdate,
 } from './schemas/vendor';
 
-// CostHead schemas
-export {
-  CostHeadCreateSchema,
-  CostHeadUpdateSchema,
-  type CostHeadCreate,
-  type CostHeadUpdate,
-} from './schemas/costHead';
-
 // PaymentMethod schemas
 export {
   PaymentMethodCreateSchema,
@@ -98,14 +90,14 @@ export {
   PurchaseLineCreateSchema,
   PurchaseAttachmentCreateSchema,
   PurchaseStatusEnum,
-  WarehouseTypeEnum,
+  PurchaseLineTypeEnum,
   type PurchaseCreate,
   type PurchaseUpdate,
   type PurchaseListFilters,
   type PurchaseLineCreate,
   type PurchaseAttachmentCreate,
   type PurchaseStatus,
-  type WarehouseType,
+  type PurchaseLineType,
 } from './schemas/purchase';
 
 // Product schemas
@@ -131,3 +123,23 @@ export {
   type ExpenseCategory,
   type ExpenseSource,
 } from './schemas/expense';
+
+// Stock schemas
+export {
+  StockItemCreateSchema,
+  StockItemUpdateSchema,
+  StockItemListFiltersSchema,
+  StockMovementInSchema,
+  StockMovementOutSchema,
+  StockMovementAdjustSchema,
+  StockBalanceListFiltersSchema,
+  StockMovementListFiltersSchema,
+  type StockItemCreate,
+  type StockItemUpdate,
+  type StockItemListFilters,
+  type StockMovementIn,
+  type StockMovementOut,
+  type StockMovementAdjust,
+  type StockBalanceListFilters,
+  type StockMovementListFilters,
+} from './schemas/stock';

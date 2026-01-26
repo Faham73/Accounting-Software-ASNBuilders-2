@@ -52,7 +52,6 @@ export async function GET(
       from: searchParams.get('from') || undefined,
       to: searchParams.get('to') || undefined,
       vendorId: searchParams.get('vendorId') || undefined,
-      costHeadId: searchParams.get('costHeadId') || undefined,
       category: searchParams.get('category') || undefined,
       paymentMethodId: searchParams.get('paymentMethodId') || undefined,
     });
@@ -99,68 +98,24 @@ export async function GET(
     if (filters.vendorId) {
       where.vendorId = filters.vendorId;
     }
-    if (filters.costHeadId) {
-      where.costHeadId = filters.costHeadId;
-    }
     if (filters.paymentMethodId) {
       where.paymentMethodId = filters.paymentMethodId;
     }
 
-    // Category filter
-    if (filters.category) {
-      where.costHead = {
-        projectCostCategoryMaps: {
-          some: {
-            companyId: auth.companyId,
-            category: filters.category,
-            isActive: true,
-          },
-        },
-      };
-    }
 
     // Get all expense lines for the project
     const lines = await prisma.voucherLine.findMany({
       where,
       include: {
-        costHead: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
       },
     });
-
-    // Get all cost category mappings for this company (for voucher-based costs)
-    const categoryMaps = await prisma.projectCostCategoryMap.findMany({
-      where: {
-        companyId: auth.companyId,
-        isActive: true,
-      },
-      select: {
-        costHeadId: true,
-        category: true,
-        costHead: {
-          select: {
-            name: true,
-          },
-        },
-      },
-    });
-
-    const categoryMapByCostHead = new Map(
-      categoryMaps.map((map) => [map.costHeadId, map.category])
-    );
 
     // Calculate voucher-based costs (legacy, for backward compatibility)
+    // All voucher costs are categorized as 'OTHERS' since cost heads are removed
     const voucherCategoryTotals = new Map<string, number>();
     lines.forEach((line) => {
       const costAmount = Number(line.debit) - Number(line.credit);
-      const category = line.costHeadId
-        ? categoryMapByCostHead.get(line.costHeadId) || 'OTHERS'
-        : 'OTHERS';
-      voucherCategoryTotals.set(category, (voucherCategoryTotals.get(category) || 0) + costAmount);
+      voucherCategoryTotals.set('OTHERS', (voucherCategoryTotals.get('OTHERS') || 0) + costAmount);
     });
 
     // Get expenses for this MAIN project and aggregate by dynamic category
@@ -323,7 +278,6 @@ export async function GET(
           from: filters.from,
           to: filters.to,
           vendorId: filters.vendorId,
-          costHeadId: filters.costHeadId,
           category: filters.category,
           paymentMethodId: filters.paymentMethodId,
           includeAllocatedOverhead,

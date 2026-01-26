@@ -24,8 +24,6 @@ export default async function EditPurchasePage({ params }: { params: { id: strin
           status: true,
         },
       },
-    },
-    include: {
       project: {
         select: { id: true, name: true },
       },
@@ -35,15 +33,15 @@ export default async function EditPurchasePage({ params }: { params: { id: strin
       supplierVendor: {
         select: { id: true, name: true },
       },
-      warehouse: {
-        select: { id: true, name: true, type: true },
-      },
       paymentAccount: {
         select: { id: true, code: true, name: true, type: true },
       },
       lines: {
         include: {
           product: {
+            select: { id: true, name: true, unit: true },
+          },
+          stockItem: {
             select: { id: true, name: true, unit: true },
           },
         },
@@ -79,8 +77,15 @@ export default async function EditPurchasePage({ params }: { params: { id: strin
     discountPercent: purchase.discountPercent ? Number(purchase.discountPercent) : null,
     lines: purchase.lines.map((line) => ({
       ...line,
-      quantity: Number(line.quantity),
-      unitPrice: Number(line.unitPrice),
+      lineType: (line.lineType || 'OTHER') as 'MATERIAL' | 'SERVICE' | 'OTHER',
+      productId: line.productId || null,
+      stockItemId: line.stockItemId || null,
+      quantity: line.quantity ? Number(line.quantity) : null,
+      unit: line.unit || null,
+      unitRate: line.unitRate ? Number(line.unitRate) : null,
+      description: line.description || null,
+      // Legacy fields for backward compatibility
+      unitPrice: line.unitRate ? Number(line.unitRate) : (line.quantity && line.quantity.gt(0) ? Number(line.lineTotal.div(line.quantity)) : 0),
       lineTotal: Number(line.lineTotal),
     })),
   };

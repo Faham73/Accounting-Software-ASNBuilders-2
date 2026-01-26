@@ -12,13 +12,12 @@ import { can } from '@/lib/permissions';
 
 /**
  * Helper to check if user can write to any master-data module
- * (ADMIN or ACCOUNTANT can write to projects/vendors/costHeads/paymentMethods)
+ * (ADMIN or ACCOUNTANT can write to projects/vendors/paymentMethods)
  */
 function canWriteMasterData(role: string): boolean {
   return (
     can(role as any, 'projects', 'WRITE') ||
     can(role as any, 'vendors', 'WRITE') ||
-    can(role as any, 'costHeads', 'WRITE') ||
     can(role as any, 'paymentMethods', 'WRITE')
   );
 }

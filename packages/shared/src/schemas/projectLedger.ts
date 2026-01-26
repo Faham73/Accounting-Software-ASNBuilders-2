@@ -7,7 +7,6 @@ export const ProjectLedgerFiltersSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional(),
   vendorId: z.string().optional(),
-  costHeadId: z.string().optional(),
   category: z.enum(['CIVIL', 'MATERIALS', 'MATI_KATA', 'DHALAI', 'OTHERS']).optional(),
   paymentMethodId: z.string().optional(),
   accountId: z.string().optional(),
@@ -23,7 +22,6 @@ export const ProjectCostSummaryFiltersSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional(),
   vendorId: z.string().optional(),
-  costHeadId: z.string().optional(),
   category: z.enum(['CIVIL', 'MATERIALS', 'MATI_KATA', 'DHALAI', 'OTHERS']).optional(),
   paymentMethodId: z.string().optional(),
 });

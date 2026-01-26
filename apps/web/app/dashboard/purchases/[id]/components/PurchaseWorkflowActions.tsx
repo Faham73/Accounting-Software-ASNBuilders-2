@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import type { PurchaseStatus } from '@accounting/shared';
 
 interface PurchaseWorkflowActionsProps {
   purchaseId: string;
-  status: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'POSTED' | 'REVERSED';
+  status: PurchaseStatus | string | null | undefined;
   voucherId: string | null;
   voucherNo: string | null;
   paidAmount: number | string | null | undefined;
@@ -65,7 +66,12 @@ export default function PurchaseWorkflowActions({
       const data = await response.json();
 
       if (data.ok) {
+        // Refresh to get updated status
         router.refresh();
+        // Small delay to ensure refresh completes
+        setTimeout(() => {
+          router.refresh();
+        }, 100);
       } else {
         alert(data.error || `Failed to ${action.toLowerCase()} purchase`);
       }
@@ -89,7 +95,12 @@ export default function PurchaseWorkflowActions({
       const data = await response.json();
 
       if (data.ok) {
+        // Refresh to get updated voucher info
         router.refresh();
+        // Small delay to ensure refresh completes
+        setTimeout(() => {
+          router.refresh();
+        }, 100);
       } else {
         alert(data.error || 'Failed to create voucher');
       }
@@ -100,10 +111,20 @@ export default function PurchaseWorkflowActions({
     }
   };
 
+  // Normalize status once at the top to avoid undefined
+  const normalizedStatus = (status ?? 'DRAFT').toString();
+
   // Normalize paidAmount safely
   const paid = typeof paidAmount === 'string' ? Number(paidAmount) : (paidAmount ?? 0);
 
-  const canCreateVoucher = !voucherId && canWrite && status === 'DRAFT';
+  // Boolean flags based on normalized status
+  const isPosted = normalizedStatus === 'POSTED';
+  const isReversed = normalizedStatus === 'REVERSED';
+  const isApproved = normalizedStatus === 'APPROVED';
+  const isSubmitted = normalizedStatus === 'SUBMITTED';
+  const isDraft = normalizedStatus === 'DRAFT';
+
+  const canCreateVoucher = !voucherId && canWrite && isDraft;
   const needsPaymentAccount = paid > 0 && !paymentAccountId;
   const isCreateVoucherDisabled = isLoading === 'CREATE_VOUCHER' || needsPaymentAccount;
 
@@ -144,7 +165,7 @@ export default function PurchaseWorkflowActions({
         </Link>
       )}
 
-      {voucherId && status === 'DRAFT' && canWrite && (
+      {voucherId && isDraft && canWrite && !isPosted && (
         <button
           onClick={() => handleWorkflowAction('SUBMIT')}
           disabled={isLoading !== null}
@@ -154,7 +175,7 @@ export default function PurchaseWorkflowActions({
         </button>
       )}
 
-      {voucherId && status === 'SUBMITTED' && canApprove && (
+      {voucherId && (isSubmitted && !isApproved && !isPosted) && canApprove && (
         <button
           onClick={() => handleWorkflowAction('APPROVE')}
           disabled={isLoading !== null}
@@ -164,17 +185,17 @@ export default function PurchaseWorkflowActions({
         </button>
       )}
 
-      {voucherId && status === 'APPROVED' && canPost && (
+      {voucherId && (isApproved && !isPosted) && canPost && (
         <button
           onClick={() => handleWorkflowAction('POST')}
-          disabled={isLoading !== null}
+          disabled={isLoading !== null || isPosted}
           className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
         >
-          {isLoading === 'POST' ? 'Posting...' : 'Post'}
+          {isLoading === 'POST' ? 'Posting...' : isPosted ? 'Posted' : 'Post'}
         </button>
       )}
 
-      {voucherId && status === 'POSTED' && canPost && (
+      {voucherId && isPosted && canPost && !isReversed && (
         <button
           onClick={() => handleWorkflowAction('REVERSE')}
           disabled={isLoading !== null}
@@ -182,6 +203,12 @@ export default function PurchaseWorkflowActions({
         >
           {isLoading === 'REVERSE' ? 'Reversing...' : 'Reverse'}
         </button>
+      )}
+
+      {voucherId && isPosted && (
+        <span className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600">
+          Posted
+        </span>
       )}
     </div>
   );
