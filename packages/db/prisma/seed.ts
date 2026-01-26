@@ -17,6 +17,7 @@ import {
   VoucherStatus,
   ExpenseType,
   OverheadAllocationMethod,
+  ExpenseSource,
 } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { faker } from '@faker-js/faker';
@@ -53,6 +54,7 @@ interface SeedContext {
   paymentMethodIds: string[];
   accountIdsByCode: Record<string, string>;
   voucherNos: Set<string>;
+  expenseCategoryIds: string[];
 }
 
 async function getOrCreateCompany(name: string) {
@@ -85,6 +87,7 @@ async function seedCompany(name: string): Promise<SeedContext> {
     paymentMethodIds: [],
     accountIdsByCode: {},
     voucherNos: new Set(),
+    expenseCategoryIds: [],
   };
 
   const slug = name.replace(/\s+/g, '').toLowerCase().slice(0, 8);
@@ -574,6 +577,131 @@ async function seedCompany(name: string): Promise<SeedContext> {
         diffJson: { changed: ['name'] },
         metaJson: { ip: '127.0.0.1' },
       },
+    });
+  }
+
+  // Seed expense categories (default categories)
+  const defaultCategoryNames = ['CIVIL', 'MATERIALS', 'MATI KATA', 'BROKERAGE', 'OTHERS'];
+  for (const catName of defaultCategoryNames) {
+    const category = await prisma.expenseCategory.upsert({
+      where: {
+        companyId_name: {
+          companyId: company.id,
+          name: catName,
+        },
+      },
+      update: {},
+      create: {
+        companyId: company.id,
+        name: catName,
+        isActive: true,
+      },
+    });
+    ctx.expenseCategoryIds.push(category.id);
+  }
+
+  // Seed expenses - create expenses across 2 projects including MATI KATA and MATERIALS
+  const existingExpenses = await prisma.expense.count({ where: { companyId: company.id } });
+  const expensesToCreate = Math.max(0, 10 - existingExpenses);
+  
+  const expenseSources: ExpenseSource[] = [ExpenseSource.WAREHOUSE, ExpenseSource.LABOR];
+  
+  // Get expense account IDs (debit accounts)
+  const debitAccountIds = [
+    ctx.accountIdsByCode['5010'], // Direct Materials
+    ctx.accountIdsByCode['5020'], // Direct Labor
+    ctx.accountIdsByCode['5030'], // Site Overhead
+  ].filter(Boolean) as string[];
+
+  // Get payment account IDs (credit accounts - cash/bank)
+  const creditAccountIds = [
+    ctx.accountIdsByCode['1010'], // Cash
+    ctx.accountIdsByCode['1020'], // Bank
+  ].filter(Boolean) as string[];
+
+  for (let i = 0; i < expensesToCreate; i++) {
+    const projectId = faker.helpers.arrayElement(allProjectIds);
+    // Determine mainProjectId
+    const selectedProject = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { parentProjectId: true },
+    });
+    const mainProjectId = selectedProject?.parentProjectId || projectId;
+    
+    const date = faker.date.between({ from: past90, to: now });
+    const categoryId = faker.helpers.arrayElement(ctx.expenseCategoryIds);
+    const source = faker.helpers.arrayElement(expenseSources);
+    const amount = faker.number.float({ min: 1000, max: 50000, fractionDigits: 2 });
+    const vendorId = faker.number.float({ min: 0, max: 1 }) < 0.7 ? faker.helpers.arrayElement(ctx.vendorIds) : null;
+    const paymentMethodId = faker.helpers.arrayElement(ctx.paymentMethodIds);
+    const debitAccountId = debitAccountIds.length > 0 ? faker.helpers.arrayElement(debitAccountIds) : debitAccountIds[0];
+    const creditAccountId = creditAccountIds.length > 0 ? faker.helpers.arrayElement(creditAccountIds) : creditAccountIds[0];
+    const paidByUserId = faker.helpers.arrayElement(ctx.userIds);
+    
+    // Generate voucher number
+    const voucherNo = nextVoucherNo(ctx, 'PV');
+    
+    // Create expense with voucher in transaction
+    await prisma.$transaction(async (tx) => {
+      // Create voucher
+      const voucher = await tx.voucher.create({
+        data: {
+          companyId: company.id,
+          projectId,
+          voucherNo,
+          type: VoucherType.PAYMENT,
+          date,
+          status: VoucherStatus.POSTED,
+          narration: `Expense: ${faker.lorem.sentence()}`,
+          createdByUserId: paidByUserId,
+          postedByUserId: paidByUserId,
+          postedAt: new Date(),
+          lines: {
+            create: [
+              {
+                companyId: company.id,
+                accountId: debitAccountId,
+                description: 'Expense',
+                debit: amount,
+                credit: 0,
+                projectId,
+                paymentMethodId,
+              },
+              {
+                companyId: company.id,
+                accountId: creditAccountId,
+                description: 'Payment',
+                debit: 0,
+                credit: amount,
+                projectId,
+                paymentMethodId,
+                vendorId,
+              },
+            ],
+          },
+        },
+      });
+
+      // Create expense
+      await tx.expense.create({
+        data: {
+          companyId: company.id,
+          projectId,
+          mainProjectId,
+          date,
+          categoryId,
+          source,
+          amount,
+          paidByUserId,
+          paidTo: vendorId ? null : faker.company.name(),
+          vendorId,
+          paymentMethodId,
+          debitAccountId,
+          creditAccountId,
+          voucherId: voucher.id,
+          notes: faker.lorem.sentence(),
+        },
+      });
     });
   }
 

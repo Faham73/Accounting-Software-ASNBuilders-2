@@ -117,3 +117,17 @@ export {
   type ProductUpdate,
   type ProductListFilters,
 } from './schemas/product';
+
+// Expense schemas
+export {
+  ExpenseCreateSchema,
+  ExpenseUpdateSchema,
+  ExpenseListFiltersSchema,
+  ExpenseCategoryEnum,
+  ExpenseSourceEnum,
+  type ExpenseCreate,
+  type ExpenseUpdate,
+  type ExpenseListFilters,
+  type ExpenseCategory,
+  type ExpenseSource,
+} from './schemas/expense';

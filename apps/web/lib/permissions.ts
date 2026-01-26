@@ -9,7 +9,7 @@ export type UserRole =
   | 'DATA_ENTRY'
   | 'VIEWER';
 
-export type Resource = 'companies' | 'projects' | 'vendors' | 'costHeads' | 'paymentMethods' | 'chartOfAccounts' | 'vouchers' | 'purchases' | 'products' | 'warehouses';
+export type Resource = 'companies' | 'projects' | 'vendors' | 'costHeads' | 'paymentMethods' | 'chartOfAccounts' | 'vouchers' | 'purchases' | 'products' | 'warehouses' | 'expenses';
 export type Action = 'READ' | 'WRITE' | 'POST' | 'APPROVE';
 
 /**
@@ -55,6 +55,10 @@ export const permissions: Record<Resource, Partial<Record<Action, UserRole[]>>> 
     WRITE: ['ADMIN', 'ACCOUNTANT'],
   },
   warehouses: {
+    READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
+    WRITE: ['ADMIN', 'ACCOUNTANT'],
+  },
+  expenses: {
     READ: ['ADMIN', 'ACCOUNTANT', 'ENGINEER', 'DATA_ENTRY', 'VIEWER'],
     WRITE: ['ADMIN', 'ACCOUNTANT'],
   },

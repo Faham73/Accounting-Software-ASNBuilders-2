@@ -70,7 +70,13 @@ enum ProjectCostCategory {
   MATERIALS
   MATI_KATA
   DHALAI
+  BROKERAGE
   OTHERS
+}
+
+enum ExpenseSource {
+  WAREHOUSE
+  LABOR
 }
 
 enum PurchaseStatus {
@@ -112,6 +118,8 @@ model Company {
   purchases                Purchase[]
   inventoryTxns           InventoryTxn[]
   productCategories        ProductCategory[]
+  expenses                 Expense[]
+  expenseCategories        ExpenseCategory[]
 
   @@map("companies")
 }
@@ -135,6 +143,7 @@ model User {
   reversedVouchers   Voucher[]     @relation("VoucherReverser")
   auditLogs          AuditLog[]
   createdAllocationRules OverheadAllocationRule[] @relation("AllocationRuleCreator")
+  expensesPaidBy Expense[]
 
   @@index([companyId])
   @@map("users")
@@ -174,9 +183,12 @@ model Project {
   mainPurchases   Purchase[]    @relation("PurchaseMainProject")
   subPurchases    Purchase[]    @relation("PurchaseSubProject")
   inventoryTxns   InventoryTxn[]
+  expenses        Expense[]
+  mainProjectExpenses Expense[] @relation("MainProjectForExpense")
 
   @@index([companyId])
   @@index([parentProjectId])
+  @@index([companyId, parentProjectId])
   @@map("projects")
 }
 
@@ -194,6 +206,7 @@ model Vendor {
   company      Company      @relation(fields: [companyId], references: [id])
   voucherLines VoucherLine[]
   purchases    Purchase[]
+  expenses     Expense[]
 
   @@index([companyId])
   @@map("vendors")
@@ -228,6 +241,7 @@ model PaymentMethod {
 
   company       Company       @relation(fields: [companyId], references: [id])
   voucherLines  VoucherLine[]
+  expenses      Expense[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -269,6 +283,8 @@ model Account {
   voucherLines VoucherLine[]
   purchasePayments Purchase[] @relation("PurchasePaymentAccount")
   productInventoryAccounts Product[] @relation("ProductInventoryAccount")
+  expenseDebitAccounts Expense[] @relation("ExpenseDebitAccount")
+  expenseCreditAccounts Expense[] @relation("ExpenseCreditAccount")
 
   @@unique([companyId, code])
   @@unique([companyId, name])
@@ -315,6 +331,7 @@ model Voucher {
   originalVoucher Voucher?          @relation("VoucherReversal", fields: [reversalOfId], references: [id])
   reversalVouchers Voucher[]         @relation("VoucherReversal")
   purchase        Purchase?          @relation("PurchaseVoucher")
+  expense         Expense?           @relation("ExpenseVoucher")
   lines           VoucherLine[]
   allocations     VendorAllocation[] @relation("PaymentVoucher")
 
@@ -642,4 +659,57 @@ model InventoryTxn {
   @@index([companyId, warehouseId])
   @@index([txnDate])
   @@map("inventory_txns")
+}
+
+model ExpenseCategory {
+  id        String   @id @default(cuid())
+  companyId String   @map("company_id")
+  company   Company  @relation(fields: [companyId], references: [id])
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  expenses Expense[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id              String         @id @default(cuid())
+  companyId       String         @map("company_id")
+  company         Company        @relation(fields: [companyId], references: [id])
+  projectId       String         @map("project_id")
+  project         Project        @relation(fields: [projectId], references: [id])
+  mainProjectId   String         @map("main_project_id")
+  mainProject     Project        @relation("MainProjectForExpense", fields: [mainProjectId], references: [id])
+  date            DateTime
+  categoryId      String         @map("category_id")
+  category        ExpenseCategory @relation(fields: [categoryId], references: [id])
+  source          ExpenseSource
+  amount          Decimal        @db.Decimal(14, 2)
+  paidByUserId    String         @map("paid_by_user_id")
+  paidByUser      User           @relation(fields: [paidByUserId], references: [id])
+  paidTo          String?        @map("paid_to")
+  vendorId        String?        @map("vendor_id")
+  vendor          Vendor?        @relation(fields: [vendorId], references: [id])
+  paymentMethodId String         @map("payment_method_id")
+  paymentMethod   PaymentMethod  @relation(fields: [paymentMethodId], references: [id])
+  debitAccountId  String         @map("debit_account_id")
+  debitAccount    Account        @relation("ExpenseDebitAccount", fields: [debitAccountId], references: [id])
+  creditAccountId String         @map("credit_account_id")
+  creditAccount   Account        @relation("ExpenseCreditAccount", fields: [creditAccountId], references: [id])
+  voucherId       String         @unique @map("voucher_id")
+  voucher         Voucher        @relation("ExpenseVoucher", fields: [voucherId], references: [id])
+  notes           String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  @@index([companyId, mainProjectId, date])
+  @@index([companyId, projectId, date])
+  @@index([companyId, categoryId, date])
+  @@index([companyId, mainProjectId])
+  @@map("expenses")
 }

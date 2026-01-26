@@ -29,10 +29,12 @@ export default async function DashboardLayout({
   const canReadPurchases = can(role, 'purchases', 'READ');
   const canReadProducts = can(role, 'products', 'READ');
   const canReadWarehouses = can(role, 'warehouses', 'READ');
+  const canReadExpenses = can(role, 'expenses', 'READ');
   const canWriteProjects = can(role, 'projects', 'WRITE');
   const canWriteVendors = can(role, 'vendors', 'WRITE');
   const canWriteCostHeads = can(role, 'costHeads', 'WRITE');
   const canWritePaymentMethods = can(role, 'paymentMethods', 'WRITE');
+  const canWriteExpenses = can(role, 'expenses', 'WRITE');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -127,6 +129,22 @@ export default async function DashboardLayout({
                 >
                   Warehouses {can(role, 'warehouses', 'WRITE') && '✏️'}
                 </Link>
+              )}
+              {canReadExpenses && (
+                <>
+                  <Link
+                    href="/dashboard/expenses"
+                    className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                  >
+                    Expenses {canWriteExpenses && '✏️'}
+                  </Link>
+                  <Link
+                    href="/dashboard/expense-categories"
+                    className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-4"
+                  >
+                    Expense Categories {canWriteExpenses && '✏️'}
+                  </Link>
+                </>
               )}
               {canReadVouchers && (
                 <Link

@@ -132,7 +132,7 @@ export async function GET(
       },
     });
 
-    // Get all cost category mappings for this company
+    // Get all cost category mappings for this company (for voucher-based costs)
     const categoryMaps = await prisma.projectCostCategoryMap.findMany({
       where: {
         companyId: auth.companyId,
@@ -153,48 +153,143 @@ export async function GET(
       categoryMaps.map((map) => [map.costHeadId, map.category])
     );
 
-    // Group by category
-    const categoryTotals = new Map<
-      'CIVIL' | 'MATERIALS' | 'MATI_KATA' | 'DHALAI' | 'OTHERS',
-      number
-    >();
-
-    // Initialize all categories
-    const categories: Array<'CIVIL' | 'MATERIALS' | 'MATI_KATA' | 'DHALAI' | 'OTHERS'> = [
-      'CIVIL',
-      'MATERIALS',
-      'MATI_KATA',
-      'DHALAI',
-      'OTHERS',
-    ];
-    categories.forEach((cat) => categoryTotals.set(cat, 0));
-
-    // Calculate cost per line: debit - credit (returns reduce cost)
+    // Calculate voucher-based costs (legacy, for backward compatibility)
+    const voucherCategoryTotals = new Map<string, number>();
     lines.forEach((line) => {
       const costAmount = Number(line.debit) - Number(line.credit);
       const category = line.costHeadId
         ? categoryMapByCostHead.get(line.costHeadId) || 'OTHERS'
         : 'OTHERS';
-      categoryTotals.set(category, categoryTotals.get(category)! + costAmount);
+      voucherCategoryTotals.set(category, (voucherCategoryTotals.get(category) || 0) + costAmount);
     });
 
-    // Build summary by category
-    const summaryByCategory = categories.map((category) => {
-      const amount = categoryTotals.get(category) || 0;
+    // Get expenses for this MAIN project and aggregate by dynamic category
+    const expenseWhere: Prisma.ExpenseWhereInput = {
+      companyId: auth.companyId,
+      mainProjectId: params.id, // Use mainProjectId for filtering
+    };
+
+    // Apply date range filter to expenses if provided
+    if (filters.from || filters.to) {
+      expenseWhere.date = {};
+      if (filters.from) {
+        expenseWhere.date.gte = new Date(filters.from);
+      }
+      if (filters.to) {
+        const toDate = new Date(filters.to);
+        toDate.setHours(23, 59, 59, 999);
+        expenseWhere.date.lte = toDate;
+      }
+    }
+
+    // Apply vendor filter if provided
+    if (filters.vendorId) {
+      expenseWhere.vendorId = filters.vendorId;
+    }
+
+    // Apply payment method filter if provided
+    if (filters.paymentMethodId) {
+      expenseWhere.paymentMethodId = filters.paymentMethodId;
+    }
+
+    // Apply category filter if provided (map from ProjectCostCategory to ExpenseCategory)
+    // Note: This is a legacy filter - in the future we should use categoryId
+    if (filters.category) {
+      // Find expense categories that match the ProjectCostCategory name
+      const matchingCategories = await prisma.expenseCategory.findMany({
+        where: {
+          companyId: auth.companyId,
+          name: {
+            equals: filters.category.replace(/_/g, ' '),
+            mode: 'insensitive',
+          },
+        },
+        select: { id: true },
+      });
+      if (matchingCategories.length > 0) {
+        expenseWhere.categoryId = { in: matchingCategories.map((c) => c.id) };
+      } else {
+        // No matching category, return empty
+        expenseWhere.categoryId = 'no-match';
+      }
+    }
+
+    // Get all expense categories for this company (active + any used in expenses)
+    const allCategories = await prisma.expenseCategory.findMany({
+      where: {
+        companyId: auth.companyId,
+        OR: [
+          { isActive: true },
+          {
+            expenses: {
+              some: {
+                companyId: auth.companyId,
+                mainProjectId: params.id,
+              },
+            },
+          },
+        ],
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    // Get expenses and aggregate by categoryId
+    const expenseTotals = await prisma.expense.groupBy({
+      by: ['categoryId'],
+      where: expenseWhere,
+      _sum: {
+        amount: true,
+      },
+    });
+
+    // Build a map of category totals
+    const expenseCategoryTotals = new Map<string, number>();
+    expenseTotals.forEach((item) => {
+      if (item._sum.amount) {
+        expenseCategoryTotals.set(item.categoryId, Number(item._sum.amount));
+      }
+    });
+
+    // Combine voucher-based totals (legacy) with expense totals
+    // For now, we'll prioritize expense totals and show categories from ExpenseCategory table
+    const summaryByCategory = allCategories.map((category) => {
+      const expenseAmount = expenseCategoryTotals.get(category.id) || 0;
+      // Add voucher-based amount if category name matches (legacy support)
+      const voucherAmount = voucherCategoryTotals.get(category.name.toUpperCase().replace(/\s+/g, '_')) || 0;
+      const totalAmount = expenseAmount + voucherAmount;
+
       return {
-        key: category,
-        name: category
-          .replace(/_/g, ' ')
-          .replace(/\b\w/g, (l) => l.toUpperCase()),
-        amount,
+        key: category.id,
+        name: category.name,
+        amount: totalAmount,
       };
     });
 
-    // Calculate grand total
-    let totalCost = Array.from(categoryTotals.values()).reduce(
-      (sum, amount) => sum + amount,
-      0
-    );
+    // Also include categories that have voucher totals but no expense category (legacy)
+    voucherCategoryTotals.forEach((amount, categoryName) => {
+      const categoryKey = categoryName.toUpperCase().replace(/\s+/g, '_');
+      const exists = summaryByCategory.some((cat) => 
+        cat.name.toUpperCase().replace(/\s+/g, '_') === categoryKey
+      );
+      if (!exists && amount > 0) {
+        summaryByCategory.push({
+          key: categoryKey,
+          name: categoryName.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+          amount,
+        });
+      }
+    });
+
+    // Sort by amount descending, then by name
+    summaryByCategory.sort((a, b) => {
+      if (b.amount !== a.amount) {
+        return b.amount - a.amount;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    // Calculate grand total from summary
+    let totalCost = summaryByCategory.reduce((sum, cat) => sum + cat.amount, 0);
 
     // Add allocated overhead if requested
     let allocatedOverhead = 0;
