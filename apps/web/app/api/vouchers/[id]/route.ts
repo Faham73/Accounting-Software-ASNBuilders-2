@@ -257,6 +257,12 @@ export async function PATCH(
             isCompanyLevel: expenseType === 'OFFICE_EXPENSE' ? false : (line.isCompanyLevel || false),
             vendorId: line.vendorId || null,
             paymentMethodId: line.paymentMethodId || null,
+            // PDF fields
+            workDetails: line.workDetails || null,
+            paidBy: line.paidBy || null,
+            receivedBy: line.receivedBy || null,
+            fileRef: line.fileRef || null,
+            voucherRef: line.voucherRef || null,
           })),
         });
       }

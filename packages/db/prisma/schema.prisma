@@ -380,6 +380,12 @@ model VoucherLine {
   isCompanyLevel Boolean  @default(false) @map("is_company_level")
   vendorId       String?  @map("vendor_id")
   paymentMethodId String? @map("payment_method_id")
+  // PDF fields
+  workDetails    String?  @map("work_details")
+  paidBy         String?  @map("paid_by")
+  receivedBy     String?  @map("received_by")
+  fileRef        String?  @map("file_ref")
+  voucherRef     String?  @map("voucher_ref")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 

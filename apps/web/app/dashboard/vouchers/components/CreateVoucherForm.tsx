@@ -15,6 +15,12 @@ interface Project {
   name: string;
 }
 
+interface PaymentMethod {
+  id: string;
+  name: string;
+  type: string;
+}
+
 interface VoucherLine {
   accountId: string;
   description: string;
@@ -22,6 +28,13 @@ interface VoucherLine {
   credit: string | number; // Allow string for UI state (empty while typing)
   projectId: string;
   isCompanyLevel: boolean;
+  paymentMethodId: string;
+  // PDF fields
+  workDetails: string;
+  paidBy: string;
+  receivedBy: string;
+  fileRef: string;
+  voucherRef: string;
 }
 
 interface CreateVoucherFormProps {
@@ -38,6 +51,7 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
 
   const [formData, setFormData] = useState(() => {
     if (voucher) {
@@ -65,11 +79,17 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
         credit: Number(l.credit),
         projectId: l.projectId || '',
         isCompanyLevel: l.isCompanyLevel || false,
+        paymentMethodId: l.paymentMethodId || '',
+        workDetails: l.workDetails || '',
+        paidBy: l.paidBy || '',
+        receivedBy: l.receivedBy || '',
+        fileRef: l.fileRef || '',
+        voucherRef: l.voucherRef || '',
       }));
     }
     return [
-      { accountId: '', description: '', debit: '', credit: '', projectId: '', isCompanyLevel: false },
-      { accountId: '', description: '', debit: '', credit: '', projectId: '', isCompanyLevel: false },
+      { accountId: '', description: '', debit: '', credit: '', projectId: '', isCompanyLevel: false, paymentMethodId: '', workDetails: '', paidBy: '', receivedBy: '', fileRef: '', voucherRef: '' },
+      { accountId: '', description: '', debit: '', credit: '', projectId: '', isCompanyLevel: false, paymentMethodId: '', workDetails: '', paidBy: '', receivedBy: '', fileRef: '', voucherRef: '' },
     ];
   });
 
@@ -91,10 +111,19 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
           setProjects(data.data);
         }
       });
+
+    // Fetch payment methods
+    fetch('/api/payment-methods?active=true')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok) {
+          setPaymentMethods(data.data);
+        }
+      });
   }, []);
 
   const addLine = () => {
-    setLines([...lines, { accountId: '', description: '', debit: '', credit: '', projectId: '', isCompanyLevel: false }]);
+    setLines([...lines, { accountId: '', description: '', debit: '', credit: '', projectId: '', isCompanyLevel: false, paymentMethodId: '', workDetails: '', paidBy: '', receivedBy: '', fileRef: '', voucherRef: '' }]);
   };
 
   const removeLine = (index: number) => {
@@ -171,6 +200,13 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
               ? null 
               : (isCompanyLevel ? null : (line.projectId || null)),
             isCompanyLevel: formData.expenseType === 'OFFICE_EXPENSE' ? false : isCompanyLevel,
+            paymentMethodId: line.paymentMethodId || null,
+            // PDF fields
+            workDetails: line.workDetails || null,
+            paidBy: line.paidBy || null,
+            receivedBy: line.receivedBy || null,
+            fileRef: line.fileRef || null,
+            voucherRef: line.voucherRef || null,
           };
         }),
       };
@@ -309,18 +345,24 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
           <table className="min-w-full divide-y divide-gray-200 border border-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Project</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
-                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Account (Purpose)</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Note</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Project</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Work Details</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Payment Method</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Paid By</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Received By</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">File Ref</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Voucher Ref</th>
+                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
+                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
+                <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {lines.map((line, index) => (
                 <tr key={index}>
-                  <td className="px-4 py-2">
+                  <td className="px-2 py-2">
                     <select
                       required
                       value={line.accountId}
@@ -335,15 +377,16 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
                       ))}
                     </select>
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-2 py-2">
                     <input
                       type="text"
                       value={line.description}
                       onChange={(e) => updateLine(index, 'description', e.target.value)}
+                      placeholder="Note"
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                     />
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-2 py-2">
                     <select
                       value={line.isCompanyLevel ? 'COMPANY' : line.projectId}
                       onChange={(e) => {
@@ -370,7 +413,55 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
                       ))}
                     </select>
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={line.workDetails}
+                      onChange={(e) => updateLine(index, 'workDetails', e.target.value)}
+                      placeholder="Work details"
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={line.paidBy}
+                      onChange={(e) => updateLine(index, 'paidBy', e.target.value)}
+                      placeholder="Paid by"
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={line.receivedBy}
+                      onChange={(e) => updateLine(index, 'receivedBy', e.target.value)}
+                      placeholder="Received by"
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={line.fileRef}
+                      onChange={(e) => updateLine(index, 'fileRef', e.target.value)}
+                      placeholder="e.g., 1*1"
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <select
+                      value={line.voucherRef}
+                      onChange={(e) => updateLine(index, 'voucherRef', e.target.value)}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    >
+                      <option value="">Select Voucher</option>
+                      <option value="Khata">Khata</option>
+                      <option value="Diary">Diary</option>
+                      <option value="OC">OC</option>
+                    </select>
+                  </td>
+                  <td className="px-2 py-2">
                     <input
                       type="number"
                       step="0.01"
@@ -387,7 +478,7 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm text-right"
                     />
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-2 py-2">
                     <input
                       type="number"
                       step="0.01"
@@ -404,7 +495,7 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm text-right"
                     />
                   </td>
-                  <td className="px-4 py-2 text-center">
+                  <td className="px-2 py-2 text-center">
                     {lines.length > 2 && (
                       <button
                         type="button"
@@ -420,14 +511,14 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
             </tbody>
             <tfoot className="bg-gray-50">
               <tr>
-                <td colSpan={3} className="px-4 py-2 text-right font-medium">Totals:</td>
-                <td className="px-4 py-2 text-right font-medium">
+                <td colSpan={9} className="px-2 py-2 text-right font-medium">Totals:</td>
+                <td className="px-2 py-2 text-right font-medium">
                   {totalDebit.toFixed(2)}
                 </td>
-                <td className="px-4 py-2 text-right font-medium">
+                <td className="px-2 py-2 text-right font-medium">
                   {totalCredit.toFixed(2)}
                 </td>
-                <td className="px-4 py-2 text-center">
+                <td className="px-2 py-2 text-center">
                   <span className={`text-sm font-medium ${isBalanced ? 'text-green-600' : 'text-red-600'}`}>
                     {isBalanced ? '✓ Balanced' : `Diff: ${difference.toFixed(2)}`}
                   </span>

@@ -17,6 +17,12 @@ export const VoucherLineCreateSchema = z.object({
   isCompanyLevel: z.boolean().optional().default(false),
   vendorId: z.string().optional().nullable(),
   paymentMethodId: z.string().optional().nullable(),
+  // PDF fields
+  workDetails: z.string().optional().nullable(),
+  paidBy: z.string().optional().nullable(),
+  receivedBy: z.string().optional().nullable(),
+  fileRef: z.string().optional().nullable(),
+  voucherRef: z.string().optional().nullable(),
 }).refine(
   (data) => data.debit > 0 || data.credit > 0,
   { message: 'Either debit or credit must be greater than 0' }
@@ -96,6 +102,44 @@ export const VoucherUpdateSchema = z.object({
 );
 
 /**
+ * Schema for updating a voucher line
+ */
+export const VoucherLineUpdateSchema = z.object({
+  accountId: z.string().min(1, 'Account is required').optional(),
+  description: z.string().optional().nullable(),
+  debit: z.number().nonnegative('Debit must be non-negative').optional(),
+  credit: z.number().nonnegative('Credit must be non-negative').optional(),
+  projectId: z.string().optional().nullable(),
+  isCompanyLevel: z.boolean().optional(),
+  vendorId: z.string().optional().nullable(),
+  paymentMethodId: z.string().optional().nullable(),
+  // PDF fields
+  workDetails: z.string().optional().nullable(),
+  paidBy: z.string().optional().nullable(),
+  receivedBy: z.string().optional().nullable(),
+  fileRef: z.string().optional().nullable(),
+  voucherRef: z.string().optional().nullable(),
+}).refine(
+  (data) => {
+    // If both debit and credit are provided, ensure only one is > 0
+    if (data.debit !== undefined && data.credit !== undefined) {
+      return !(data.debit > 0 && data.credit > 0);
+    }
+    return true;
+  },
+  { message: 'A line cannot have both debit and credit' }
+).refine(
+  (data) => {
+    // If isCompanyLevel is true, projectId must be null
+    if (data.isCompanyLevel && data.projectId) {
+      return false;
+    }
+    return true;
+  },
+  { message: 'Company-level credits cannot have a project assigned' }
+);
+
+/**
  * Schema for filtering vouchers list
  */
 export const VoucherListFiltersSchema = z.object({
@@ -110,6 +154,7 @@ export const VoucherListFiltersSchema = z.object({
 
 // Inferred TypeScript types
 export type VoucherLineCreate = z.infer<typeof VoucherLineCreateSchema>;
+export type VoucherLineUpdate = z.infer<typeof VoucherLineUpdateSchema>;
 export type VoucherCreate = z.infer<typeof VoucherCreateSchema>;
 export type VoucherUpdate = z.infer<typeof VoucherUpdateSchema>;
 export type VoucherListFilters = z.infer<typeof VoucherListFiltersSchema>;

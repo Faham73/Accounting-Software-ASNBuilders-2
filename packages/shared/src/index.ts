@@ -66,11 +66,13 @@ export {
   VoucherUpdateSchema,
   VoucherListFiltersSchema,
   VoucherLineCreateSchema,
+  VoucherLineUpdateSchema,
   VoucherStatusEnum,
   type VoucherCreate,
   type VoucherUpdate,
   type VoucherListFilters,
   type VoucherLineCreate,
+  type VoucherLineUpdate,
   type VoucherStatus,
 } from './schemas/voucher';
 

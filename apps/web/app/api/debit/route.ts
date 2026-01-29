@@ -69,7 +69,10 @@ export async function GET(request: NextRequest) {
         where,
         skip,
         take,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [
+          { voucher: { date: 'asc' } },
+          { createdAt: 'asc' },
+        ],
         include: {
           voucher: {
             select: {
@@ -78,12 +81,16 @@ export async function GET(request: NextRequest) {
               date: true,
               type: true,
               narration: true,
+              status: true,
             },
           },
           account: {
             select: { id: true, code: true, name: true },
           },
           project: {
+            select: { id: true, name: true },
+          },
+          paymentMethod: {
             select: { id: true, name: true },
           },
         },
