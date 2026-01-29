@@ -35,7 +35,9 @@ interface Purchase {
   reference: string | null;
   discountPercent: number | null;
   paidAmount: number;
-  paymentAccountId: string | null;
+  paymentAccountId?: string | null;
+  paymentMethod?: 'CASH' | 'BANK' | null;
+  paymentAccount?: { code: string; name?: string } | null;
   lines: Array<{
     id: string;
     stockItemId: string | null;
@@ -72,13 +74,6 @@ interface Vendor {
   name: string;
 }
 
-interface Account {
-  id: string;
-  code: string;
-  name: string;
-  type: string;
-}
-
 function toDateInputValue(input: unknown): string {
   if (input == null) return '';
   if (typeof input === 'string') {
@@ -110,7 +105,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [subProjects, setSubProjects] = useState<Project[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoadingVendors, setIsLoadingVendors] = useState(false);
 
   // Get projectId and returnTo from URL if launched from project dashboard
@@ -126,7 +120,13 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     reference: purchase?.reference || '',
     discountPercent: purchase?.discountPercent?.toString() || '',
     paidAmount: purchase?.paidAmount?.toString() || '0',
-    paymentAccountId: purchase?.paymentAccountId || '',
+    paymentMethod: (() => {
+      if (purchase?.paymentMethod) return purchase.paymentMethod;
+      const code = purchase?.paymentAccount?.code;
+      if (code === '1010') return 'CASH';
+      if (code === '1020') return 'BANK';
+      return Number(purchase?.paidAmount) > 0 ? 'CASH' : '';
+    })(),
   });
 
   // Determine if project should be disabled (preselected from project dashboard)
@@ -241,17 +241,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
           setIsLoadingVendors(false);
         }
 
-        // Fetch accounts
-        const accountsRes = await fetch('/api/chart-of-accounts?active=true');
-        const accountsData = await accountsRes.json();
-        if (accountsData.ok) {
-          // Filter to leaf accounts (accounts that don't have children)
-          const allAccounts = accountsData.data;
-          const accountIds = new Set(allAccounts.map((a: Account) => a.id));
-          const parentIds = new Set(allAccounts.map((a: Account & { parentId?: string }) => a.parentId).filter(Boolean));
-          const leafAccounts = allAccounts.filter((a: Account) => !parentIds.has(a.id));
-          setAccounts(leafAccounts);
-        }
       } catch (err) {
         console.error('Failed to fetch dropdown data:', err);
       }
@@ -412,9 +401,9 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
       return;
     }
 
-    // Validate payment account is required when paid amount > 0
-    if (paid > 0 && !formData.paymentAccountId) {
-      setError('Payment account is required when paid amount > 0');
+    // Validate payment method is required when paid amount > 0
+    if (paid > 0 && !formData.paymentMethod) {
+      setError('Payment method (Cash or Bank) is required when paid amount > 0');
       return;
     }
 
@@ -722,9 +711,8 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
               value={formData.paidAmount}
               onChange={(e) => {
                 const newPaidAmount = e.target.value;
-                // Clear payment account if paid amount becomes 0
-                const paymentAccountId = parseFloat(newPaidAmount) > 0 ? formData.paymentAccountId : '';
-                setFormData({ ...formData, paidAmount: newPaidAmount, paymentAccountId });
+                const paymentMethod = parseFloat(newPaidAmount) > 0 ? formData.paymentMethod : '';
+                setFormData({ ...formData, paidAmount: newPaidAmount, paymentMethod });
               }}
               className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
             />
@@ -745,31 +733,28 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
           {parseFloat(formData.paidAmount) > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Account Type + Account Number <span className="text-red-500">*</span>
+                Payment Method <span className="text-red-500">*</span>
               </label>
               <select
                 required
-                value={formData.paymentAccountId}
-                onChange={(e) => setFormData({ ...formData, paymentAccountId: e.target.value })}
+                value={formData.paymentMethod}
+                onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value as 'CASH' | 'BANK' })}
                 className={`mt-1 block w-full rounded-md border px-3 py-2 text-gray-900 shadow-sm focus:ring-2 focus:ring-blue-500 ${
-                  !formData.paymentAccountId
+                  !formData.paymentMethod
                     ? 'border-red-300 bg-red-50 focus:border-red-500'
                     : 'border-gray-300 bg-white focus:border-blue-500'
                 }`}
               >
-                <option value="">Select account</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.code} - {a.name} ({a.type})
-                  </option>
-                ))}
+                <option value="">Select method</option>
+                <option value="CASH">Cash</option>
+                <option value="BANK">Bank</option>
               </select>
               <p className="mt-1 text-xs text-gray-500">
-                Required when Paid Amount &gt; 0
+                Required when Paid Amount &gt; 0. Cash → 1010, Bank → 1020.
               </p>
-              {!formData.paymentAccountId && (
+              {!formData.paymentMethod && (
                 <p className="mt-1 text-xs text-red-600">
-                  Please select a payment account
+                  Please select Cash or Bank
                 </p>
               )}
             </div>

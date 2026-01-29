@@ -116,6 +116,11 @@ enum PurchaseLineType {
   OTHER
 }
 
+enum PurchasePaymentMethod {
+  CASH
+  BANK
+}
+
 model Company {
   id        String   @id @default(cuid())
   name      String
@@ -517,6 +522,7 @@ model Purchase {
   total           Decimal       @db.Decimal(18, 2)
   paidAmount      Decimal       @default(0) @map("paid_amount") @db.Decimal(18, 2)
   dueAmount       Decimal       @default(0) @map("due_amount") @db.Decimal(18, 2)
+  paymentMethod   PurchasePaymentMethod? @map("payment_method")
   paymentAccountId String?      @map("payment_account_id")
   voucherId       String?       @unique @map("voucher_id")
   status          PurchaseStatus @default(DRAFT)

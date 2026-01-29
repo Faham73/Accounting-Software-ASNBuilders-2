@@ -11,6 +11,11 @@ export const PurchaseStatusEnum = z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'POS
 export const PurchaseLineTypeEnum = z.enum(['MATERIAL', 'SERVICE', 'OTHER']);
 
 /**
+ * Purchase payment method (CASH -> 1010, BANK -> 1020; server maps to paymentAccountId)
+ */
+export const PurchasePaymentMethodEnum = z.enum(['CASH', 'BANK']);
+
+/**
  * Schema for creating a purchase line
  */
 export const PurchaseLineCreateSchema = z
@@ -101,13 +106,12 @@ export const PurchaseCreateSchema = z.object({
   reference: z.string().optional().nullable(),
   discountPercent: z.number().nonnegative().max(100).optional().nullable(),
   paidAmount: z.number().nonnegative('Paid amount must be non-negative').default(0),
-  paymentAccountId: z.string().optional().nullable(),
+  paymentMethod: PurchasePaymentMethodEnum.optional().nullable(),
   lines: z.array(PurchaseLineCreateSchema).min(1, 'At least one purchase line is required'),
   attachments: z.array(PurchaseAttachmentCreateSchema).optional().default([]),
 })
   .refine(
     (data) => {
-      // Validate that paidAmount doesn't exceed total (computed server-side, but validate here for UX)
       const subtotal = data.lines.reduce((sum, line) => sum + line.lineTotal, 0);
       const discount = data.discountPercent ? (subtotal * data.discountPercent / 100) : 0;
       const total = subtotal - discount;
@@ -117,16 +121,17 @@ export const PurchaseCreateSchema = z.object({
   )
   .refine(
     (data) => {
-      // Payment account is required when paid amount > 0
-      if (data.paidAmount > 0 && !data.paymentAccountId) {
-        return false;
-      }
+      if (data.paidAmount > 0) return !!data.paymentMethod;
       return true;
     },
-    {
-      message: 'Payment account is required when paid amount > 0',
-      path: ['paymentAccountId'],
-    }
+    { message: 'Payment method (Cash or Bank) is required when paid amount > 0', path: ['paymentMethod'] }
+  )
+  .refine(
+    (data) => {
+      if (data.paidAmount === 0) return data.paymentMethod == null;
+      return true;
+    },
+    { message: 'Payment method must be empty when paid amount is 0', path: ['paymentMethod'] }
   );
 
 /**
@@ -141,13 +146,13 @@ export const PurchaseUpdateSchema = z.object({
   reference: z.string().optional().nullable(),
   discountPercent: z.number().nonnegative().max(100).optional().nullable(),
   paidAmount: z.number().nonnegative('Paid amount must be non-negative').optional(),
-  paymentAccountId: z.string().optional().nullable(),
+  paymentMethod: PurchasePaymentMethodEnum.optional().nullable(),
   lines: z.array(PurchaseLineCreateSchema).min(1, 'At least one purchase line is required').optional(),
   attachments: z.array(PurchaseAttachmentCreateSchema).optional(),
 })
   .refine(
     (data) => {
-      if (!data.lines || !data.paidAmount) return true;
+      if (!data.lines || data.paidAmount == null) return true;
       const subtotal = data.lines.reduce((sum, line) => sum + line.lineTotal, 0);
       const discount = data.discountPercent ? (subtotal * data.discountPercent / 100) : 0;
       const total = subtotal - discount;
@@ -157,16 +162,17 @@ export const PurchaseUpdateSchema = z.object({
   )
   .refine(
     (data) => {
-      // Payment account is required when paid amount > 0
-      if (data.paidAmount && data.paidAmount > 0 && !data.paymentAccountId) {
-        return false;
-      }
+      if (data.paidAmount != null && data.paidAmount > 0) return !!data.paymentMethod;
       return true;
     },
-    {
-      message: 'Payment account is required when paid amount > 0',
-      path: ['paymentAccountId'],
-    }
+    { message: 'Payment method (Cash or Bank) is required when paid amount > 0', path: ['paymentMethod'] }
+  )
+  .refine(
+    (data) => {
+      if (data.paidAmount != null && data.paidAmount === 0) return data.paymentMethod == null;
+      return true;
+    },
+    { message: 'Payment method must be empty when paid amount is 0', path: ['paymentMethod'] }
   );
 
 /**
@@ -191,3 +197,4 @@ export type PurchaseUpdate = z.infer<typeof PurchaseUpdateSchema>;
 export type PurchaseListFilters = z.infer<typeof PurchaseListFiltersSchema>;
 export type PurchaseStatus = z.infer<typeof PurchaseStatusEnum>;
 export type PurchaseLineType = z.infer<typeof PurchaseLineTypeEnum>;
+export type PurchasePaymentMethod = z.infer<typeof PurchasePaymentMethodEnum>;

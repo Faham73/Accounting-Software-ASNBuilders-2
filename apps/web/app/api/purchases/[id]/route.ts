@@ -10,6 +10,7 @@ import { PurchaseUpdateSchema } from '@accounting/shared';
 import { ZodError } from 'zod';
 import { createAuditLog } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
+import { resolvePaymentAccountId } from '@/lib/purchases/purchasePaymentDefaults.server';
 
 /**
  * GET /api/purchases/[id]
@@ -103,6 +104,9 @@ export async function PUT(
             status: true,
           },
         },
+        paymentAccount: {
+          select: { code: true },
+        },
       },
     });
 
@@ -192,20 +196,33 @@ export async function PUT(
       }
     }
 
-    // Validate payment account if provided (must be system account)
-    if (validatedData.paymentAccountId) {
-      const account = await prisma.account.findUnique({
-        where: { id: validatedData.paymentAccountId },
-      });
-
-      if (!account || account.companyId !== auth.companyId || !account.isActive || !account.isSystem) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: 'Payment account not found, inactive, or is not a system account',
-          },
-          { status: 400 }
-        );
+    // Resolve paymentAccountId and paymentMethod for update (when paidAmount is provided)
+    let paymentAccountId: string | null | undefined;
+    let paymentMethod: 'CASH' | 'BANK' | null | undefined;
+    const paidAmountForPayment =
+      validatedData.paidAmount !== undefined
+        ? validatedData.paidAmount
+        : Number(existingPurchase.paidAmount);
+    if (validatedData.paidAmount !== undefined || validatedData.paymentMethod !== undefined) {
+      if (paidAmountForPayment > 0) {
+        const derivedMethod =
+          existingPurchase.paymentAccount?.code === '1020' ? 'BANK' : existingPurchase.paymentAccount?.code === '1010' ? 'CASH' : null;
+        const method = validatedData.paymentMethod ?? (existingPurchase.paymentMethod as 'CASH' | 'BANK' | null) ?? derivedMethod;
+        if (!method) {
+          return NextResponse.json(
+            { ok: false, error: 'Payment method (Cash or Bank) is required when paid amount > 0' },
+            { status: 400 }
+          );
+        }
+        const resolved = await resolvePaymentAccountId(auth.companyId, method);
+        if ('error' in resolved) {
+          return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
+        }
+        paymentAccountId = resolved.paymentAccountId;
+        paymentMethod = method;
+      } else {
+        paymentAccountId = null;
+        paymentMethod = null;
       }
     }
 
@@ -291,7 +308,8 @@ export async function PUT(
           ...(total !== undefined && { total }),
           ...(validatedData.paidAmount !== undefined && { paidAmount: new Prisma.Decimal(validatedData.paidAmount) }),
           ...(dueAmount !== undefined && { dueAmount }),
-          ...(validatedData.paymentAccountId !== undefined && { paymentAccountId: validatedData.paymentAccountId }),
+          ...(paymentAccountId !== undefined && { paymentAccountId }),
+          ...(paymentMethod !== undefined && { paymentMethod }),
           ...(validatedData.lines && {
             lines: {
               create: validatedData.lines.map((line) => {

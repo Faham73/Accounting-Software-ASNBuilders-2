@@ -10,6 +10,7 @@ import { PurchaseCreateSchema, PurchaseListFiltersSchema } from '@accounting/sha
 import { ZodError } from 'zod';
 import { createAuditLog } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
+import { resolvePaymentAccountId } from '@/lib/purchases/purchasePaymentDefaults.server';
 
 /**
  * GET /api/purchases
@@ -218,21 +219,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate payment account if provided (must be system account)
-    if (validatedData.paymentAccountId) {
-      const account = await prisma.account.findUnique({
-        where: { id: validatedData.paymentAccountId },
-      });
-
-      if (!account || account.companyId !== auth.companyId || !account.isActive || !account.isSystem) {
+    // Resolve paymentAccountId from paymentMethod when paidAmount > 0
+    let paymentAccountId: string | null = null;
+    let paymentMethod: 'CASH' | 'BANK' | null = null;
+    if (validatedData.paidAmount > 0) {
+      if (!validatedData.paymentMethod) {
         return NextResponse.json(
-          {
-            ok: false,
-            error: 'Payment account not found, inactive, or is not a system account',
-          },
+          { ok: false, error: 'Payment method (Cash or Bank) is required when paid amount > 0' },
           { status: 400 }
         );
       }
+      const resolved = await resolvePaymentAccountId(auth.companyId, validatedData.paymentMethod);
+      if ('error' in resolved) {
+        return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
+      }
+      paymentAccountId = resolved.paymentAccountId;
+      paymentMethod = validatedData.paymentMethod;
     }
 
     // Validate stock items for MATERIAL lines (only if stockItemId is provided)
@@ -290,7 +292,8 @@ export async function POST(request: NextRequest) {
           total,
           paidAmount,
           dueAmount,
-          paymentAccountId: validatedData.paymentAccountId || null,
+          paymentMethod,
+          paymentAccountId,
           status: 'DRAFT',
           lines: {
             create: validatedData.lines.map((line) => {

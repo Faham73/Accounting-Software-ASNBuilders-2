@@ -288,6 +288,22 @@ export default async function PurchaseDetailPage({ params }: { params: { id: str
                 {formatCurrency(Number(purchase.paidAmount))}
               </p>
             </div>
+            {Number(purchase.paidAmount) > 0 && (
+              <div>
+                <label className="text-sm font-medium text-gray-500">Payment Method</label>
+                <p className="mt-1 text-sm text-gray-900">
+                  {purchase.paymentMethod === 'BANK'
+                    ? 'Bank'
+                    : purchase.paymentMethod === 'CASH'
+                    ? 'Cash'
+                    : purchase.paymentAccount?.code === '1020'
+                    ? 'Bank'
+                    : purchase.paymentAccount?.code === '1010'
+                    ? 'Cash'
+                    : purchase.paymentAccount?.name ?? '—'}
+                </p>
+              </div>
+            )}
             <div>
               <label className="text-sm font-medium text-gray-500">Due</label>
               <p className="mt-1 text-lg font-semibold text-red-600">

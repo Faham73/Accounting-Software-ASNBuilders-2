@@ -93,6 +93,7 @@ export {
   PurchaseAttachmentCreateSchema,
   PurchaseStatusEnum,
   PurchaseLineTypeEnum,
+  PurchasePaymentMethodEnum,
   type PurchaseCreate,
   type PurchaseUpdate,
   type PurchaseListFilters,
@@ -100,6 +101,7 @@ export {
   type PurchaseAttachmentCreate,
   type PurchaseStatus,
   type PurchaseLineType,
+  type PurchasePaymentMethod,
 } from './schemas/purchase';
 
 // Expense schemas
