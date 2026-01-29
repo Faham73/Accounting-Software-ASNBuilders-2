@@ -3,6 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { getPurchaseMaterialsLabel } from '@/lib/purchases/materialsDisplay';
+
+interface PurchaseLineForList {
+  lineType: 'MATERIAL' | 'SERVICE' | 'OTHER';
+  materialName?: string | null;
+  description?: string | null;
+  stockItem?: { name: string } | null;
+}
 
 interface Purchase {
   id: string;
@@ -17,7 +25,7 @@ interface Purchase {
   subProject: { id: string; name: string } | null;
   supplierVendor: { id: string; name: string };
   voucher: { id: string; voucherNo: string } | null;
-  lines: Array<{ lineType: 'MATERIAL' | 'SERVICE' | 'OTHER' }>;
+  lines: PurchaseLineForList[];
   _count: { attachments: number };
 }
 
@@ -185,6 +193,7 @@ export default function PurchasesList({ canWrite }: PurchasesListProps) {
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SN</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Material(s)</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Project</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sub Project</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Challan No</th>
@@ -220,6 +229,9 @@ export default function PurchasesList({ canWrite }: PurchasesListProps) {
                       >
                         {purchase.status}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 max-w-[200px]">
+                      {getPurchaseMaterialsLabel(purchase.lines)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div className="flex items-center space-x-2">

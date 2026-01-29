@@ -209,7 +209,6 @@ export async function buildVoucherFromPurchase(
       const materialAccountResult = await getMaterialAccount(
         {
           lineType,
-          product: purchaseLine.product,
           stockItemId: purchaseLine.stockItemId,
         },
         materialsAccount,

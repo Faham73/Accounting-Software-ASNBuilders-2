@@ -100,7 +100,12 @@ export async function GET(request: NextRequest) {
             select: { id: true, voucherNo: true },
           },
           lines: {
-            select: { lineType: true },
+            select: {
+              lineType: true,
+              materialName: true,
+              description: true,
+              stockItem: { select: { name: true } },
+            },
           },
           _count: {
             select: { attachments: true },
@@ -230,39 +235,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate stock items for MATERIAL lines
+    // Validate stock items for MATERIAL lines (only if stockItemId is provided)
+    // New form uses materialName instead of stockItemId, so stockItemId is optional
     const materialLines = validatedData.lines.filter((line) => line.lineType === 'MATERIAL');
     if (materialLines.length > 0) {
       const stockItemIds = materialLines
         .map((line) => line.stockItemId)
         .filter((id): id is string => Boolean(id));
       
-      if (stockItemIds.length !== materialLines.length) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: 'Stock item is required for all MATERIAL lines',
+      // Only validate stock items if any lines have stockItemId (backwards compatibility)
+      if (stockItemIds.length > 0) {
+        const stockItems = await prisma.stockItem.findMany({
+          where: {
+            id: { in: stockItemIds },
+            companyId: auth.companyId,
+            isActive: true,
           },
-          { status: 400 }
-        );
-      }
+        });
 
-      const stockItems = await prisma.stockItem.findMany({
-        where: {
-          id: { in: stockItemIds },
-          companyId: auth.companyId,
-          isActive: true,
-        },
-      });
-
-      if (stockItems.length !== stockItemIds.length) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: 'One or more stock items not found, inactive, or do not belong to your company',
-          },
-          { status: 400 }
-        );
+        if (stockItems.length !== stockItemIds.length) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: 'One or more stock items not found, inactive, or do not belong to your company',
+            },
+            { status: 400 }
+          );
+        }
       }
     }
 
@@ -301,15 +300,23 @@ export async function POST(request: NextRequest) {
                 lineTotal = line.quantity * line.unitRate;
               }
 
-              return {
-                lineType: line.lineType,
-                stockItemId: line.stockItemId || null,
+              // Default lineType to MATERIAL if not provided
+              const lineType = line.lineType || 'MATERIAL';
+
+              const lineData: Record<string, unknown> = {
+                lineType,
                 quantity: line.quantity ? new Prisma.Decimal(line.quantity) : null,
                 unit: line.unit || null,
                 unitRate: line.unitRate ? new Prisma.Decimal(line.unitRate) : null,
                 description: line.description || null,
+                materialName: line.materialName || null,
                 lineTotal: new Prisma.Decimal(lineTotal),
               };
+              // Use relation API for optional stockItem (Prisma nested create)
+              if (line.stockItemId) {
+                lineData.stockItem = { connect: { id: line.stockItemId } };
+              }
+              return lineData;
             }),
           },
           attachments: {

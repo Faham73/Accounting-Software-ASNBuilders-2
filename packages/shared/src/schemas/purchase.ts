@@ -15,22 +15,24 @@ export const PurchaseLineTypeEnum = z.enum(['MATERIAL', 'SERVICE', 'OTHER']);
  */
 export const PurchaseLineCreateSchema = z
   .object({
-    lineType: PurchaseLineTypeEnum.default('OTHER'),
+    lineType: PurchaseLineTypeEnum.default('MATERIAL'),
     stockItemId: z.string().optional().nullable(),
     quantity: z.number().nonnegative('Quantity must be non-negative').optional().nullable(),
     unit: z.string().optional().nullable(),
     unitRate: z.number().nonnegative('Unit rate must be non-negative').optional().nullable(),
     description: z.string().optional().nullable(),
+    materialName: z.string().trim().min(1).optional().nullable(),
     lineTotal: z.number().nonnegative('Line total must be non-negative'),
   })
   .superRefine((data, ctx) => {
-    // MATERIAL lines require stockItemId and quantity > 0
+    // MATERIAL lines require either materialName OR stockItemId (for backwards compatibility)
+    // Also require quantity > 0
     if (data.lineType === 'MATERIAL') {
-      if (!data.stockItemId) {
+      if (!data.materialName && !data.stockItemId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Stock item is required for MATERIAL lines',
-          path: ['stockItemId'],
+          message: 'Material name or stock item is required for MATERIAL lines',
+          path: ['materialName'],
         });
       }
       if (!data.quantity || data.quantity <= 0) {

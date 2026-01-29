@@ -8,12 +8,13 @@ type PurchaseLineType = 'MATERIAL' | 'SERVICE' | 'OTHER';
 
 interface PurchaseLine {
   id?: string;
-  lineType: PurchaseLineType;
+  lineType: PurchaseLineType; // Always 'MATERIAL' for new lines, kept for backwards compat
   stockItemId?: string | null;
   quantity?: number | null;
   unit?: string | null;
   unitRate?: number | null;
   description?: string | null;
+  materialName?: string | null; // New: free text material name
   lineTotal: number;
 }
 
@@ -42,6 +43,7 @@ interface Purchase {
     unit: string | null;
     unitRate: number | null;
     lineTotal: number;
+    materialName?: string | null;
     stockItem?: { id: string; name: string; unit: string } | null;
   }>;
   attachments: PurchaseAttachment[];
@@ -107,11 +109,9 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [subProjects, setSubProjects] = useState<Project[]>([]);
-  const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoadingVendors, setIsLoadingVendors] = useState(false);
-  const [isLoadingStockItems, setIsLoadingStockItems] = useState(false);
 
   // Get projectId and returnTo from URL if launched from project dashboard
   const projectIdFromUrl = searchParams.get('projectId') || '';
@@ -133,16 +133,31 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
   const isProjectPreselected = Boolean(projectIdFromUrl && !purchase);
 
   const [lines, setLines] = useState<PurchaseLine[]>(
-    purchase?.lines.map((l: any) => ({
-      id: l.id,
-      lineType: (l.lineType || 'OTHER') as PurchaseLineType,
-      stockItemId: l.stockItemId || null,
-      quantity: l.quantity ? Number(l.quantity) : null,
-      unit: l.unit || null,
-      unitRate: l.unitRate ? Number(l.unitRate) : null,
-      description: l.description || null,
-      lineTotal: Number(l.lineTotal),
-    })) || []
+    purchase?.lines.length
+      ? purchase.lines.map((l: any) => ({
+          id: l.id,
+          lineType: (l.lineType || 'MATERIAL') as PurchaseLineType, // Default to MATERIAL
+          stockItemId: l.stockItemId || null,
+          quantity: l.quantity ? Number(l.quantity) : null,
+          unit: l.unit || null,
+          unitRate: l.unitRate ? Number(l.unitRate) : null,
+          description: l.description || null,
+          // For backwards compatibility: use materialName if present, else stockItem.name, else description
+          materialName: l.materialName || l.stockItem?.name || l.description || null,
+          lineTotal: Number(l.lineTotal),
+        }))
+      : [
+          {
+            lineType: 'MATERIAL' as PurchaseLineType,
+            stockItemId: null,
+            quantity: null,
+            unit: null,
+            unitRate: null,
+            description: null,
+            materialName: null,
+            lineTotal: 0,
+          },
+        ]
   );
 
   const [attachments, setAttachments] = useState<PurchaseAttachment[]>(
@@ -202,24 +217,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
           }
         } else {
           console.error('Failed to fetch projects:', projectsData);
-        }
-
-        // Fetch stock items
-        setIsLoadingStockItems(true);
-        try {
-          const stockItemsRes = await fetch('/api/stock/items?isActive=true&pageSize=1000', {
-            credentials: 'include',
-          });
-          const stockItemsData = await stockItemsRes.json();
-          if (stockItemsData.ok) {
-            setStockItems(stockItemsData.data || []);
-          } else {
-            console.error('Failed to fetch stock items:', stockItemsData);
-          }
-        } catch (err) {
-          console.error('Failed to fetch stock items:', err);
-        } finally {
-          setIsLoadingStockItems(false);
         }
 
         // Fetch vendors (active vendors by default)
@@ -303,12 +300,13 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     setLines([
       ...lines,
       {
-        lineType: 'OTHER',
+        lineType: 'MATERIAL', // Always MATERIAL for new lines
         stockItemId: null,
         quantity: null,
         unit: null,
         unitRate: null,
         description: null,
+        materialName: null,
         lineTotal: 0,
       },
     ]);
@@ -323,64 +321,11 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     const line = newLines[index];
     newLines[index] = { ...line, [field]: value };
 
-    // When lineType changes, reset relevant fields
-    if (field === 'lineType') {
-      if (value === 'MATERIAL') {
-        newLines[index] = {
-          ...line,
-          lineType: value,
-          stockItemId: null,
-          quantity: null,
-          unit: null,
-          unitRate: null,
-          description: null,
-          lineTotal: 0,
-        };
-      } else if (value === 'SERVICE') {
-        newLines[index] = {
-          ...line,
-          lineType: value,
-          stockItemId: null,
-          quantity: null,
-          unit: null,
-          unitRate: null,
-          description: null,
-          lineTotal: 0,
-        };
-      } else {
-        newLines[index] = {
-          ...line,
-          lineType: value,
-          stockItemId: null,
-          quantity: null,
-          unit: null,
-          unitRate: null,
-          description: null,
-          lineTotal: 0,
-        };
-      }
-    }
-
-    // When stockItemId changes, update unit from stockItem
-    if (field === 'stockItemId' && value) {
-      const stockItem = stockItems.find((si) => si.id === value);
-      if (stockItem) {
-        newLines[index].unit = stockItem.unit;
-      }
-    }
-
-    // Recalculate line total for MATERIAL and SERVICE
+    // Recalculate line total when quantity or unitRate changes
     if (field === 'quantity' || field === 'unitRate') {
       const quantity = field === 'quantity' ? (value || 0) : (line.quantity || 0);
       const unitRate = field === 'unitRate' ? (value || 0) : (line.unitRate || 0);
-      if (line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') {
-        newLines[index].lineTotal = quantity * unitRate;
-      }
-    }
-
-    // For OTHER lines, lineTotal is entered directly
-    if (field === 'lineTotal' && line.lineType === 'OTHER') {
-      newLines[index].lineTotal = value || 0;
+      newLines[index].lineTotal = quantity * unitRate;
     }
 
     setLines(newLines);
@@ -446,33 +391,18 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       
-      if (line.lineType === 'MATERIAL') {
-        if (!line.stockItemId) {
-          setError(`Line ${i + 1}: Stock item is required for MATERIAL lines`);
-          return;
-        }
-        if (!line.quantity || line.quantity <= 0) {
-          setError(`Line ${i + 1}: Quantity must be greater than 0 for MATERIAL lines`);
-          return;
-        }
-        if (!line.unitRate || line.unitRate < 0) {
-          setError(`Line ${i + 1}: Unit rate is required for MATERIAL lines`);
-          return;
-        }
-      } else if (line.lineType === 'SERVICE') {
-        if (!line.description) {
-          setError(`Line ${i + 1}: Description is required for SERVICE lines`);
-          return;
-        }
-        if (line.lineTotal <= 0) {
-          setError(`Line ${i + 1}: Amount must be greater than 0 for SERVICE lines`);
-          return;
-        }
-      } else if (line.lineType === 'OTHER') {
-        if (line.lineTotal <= 0) {
-          setError(`Line ${i + 1}: Amount must be greater than 0 for OTHER lines`);
-          return;
-        }
+      // All lines are now MATERIAL - validate materialName, quantity, unitRate
+      if (!line.materialName || line.materialName.trim() === '') {
+        setError(`Line ${i + 1}: Material name is required`);
+        return;
+      }
+      if (!line.quantity || line.quantity <= 0) {
+        setError(`Line ${i + 1}: Quantity must be greater than 0`);
+        return;
+      }
+      if (!line.unitRate || line.unitRate < 0) {
+        setError(`Line ${i + 1}: Unit rate is required`);
+        return;
       }
     }
 
@@ -502,12 +432,13 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         paidAmount: parseFloat(formData.paidAmount) || 0,
         paymentAccountId: formData.paymentAccountId || null,
         lines: lines.map((line) => ({
-          lineType: line.lineType,
-          stockItemId: line.stockItemId || null,
+          lineType: 'MATERIAL', // Always MATERIAL for new form
+          stockItemId: null, // Not used in new form
           quantity: line.quantity || null,
           unit: line.unit || null,
           unitRate: line.unitRate || null,
-          description: line.description || null,
+          description: line.description || null, // Optional notes
+          materialName: line.materialName || null,
           lineTotal: line.lineTotal,
         })),
         attachments: attachments,
@@ -680,8 +611,7 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Line Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item/Description</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Material Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit Rate</th>
@@ -693,128 +623,53 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
               {lines.map((line, index) => (
                 <tr key={index}>
                   <td className="px-6 py-4">
-                    <select
+                    <input
+                      type="text"
                       required
-                      value={line.lineType}
-                      onChange={(e) => updateLine(index, 'lineType', e.target.value)}
+                      placeholder="Enter material name"
+                      value={line.materialName || ''}
+                      onChange={(e) => updateLine(index, 'materialName', e.target.value)}
                       className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="MATERIAL">Material</option>
-                      <option value="SERVICE">Service</option>
-                      <option value="OTHER">Other</option>
-                    </select>
+                    />
                   </td>
                   <td className="px-6 py-4">
-                    {line.lineType === 'MATERIAL' ? (
-                      <div className="space-y-2">
-                        <select
-                          required
-                          value={line.stockItemId || ''}
-                          onChange={(e) => updateLine(index, 'stockItemId', e.target.value)}
-                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">{isLoadingStockItems ? 'Loading materials...' : 'Select material'}</option>
-                          {stockItems.map((si) => (
-                            <option key={si.id} value={si.id}>
-                              {si.name} {si.unit ? `(${si.unit})` : ''}
-                            </option>
-                          ))}
-                        </select>
-                        {stockItems.length === 0 && !isLoadingStockItems && (
-                          <p className="mt-1 text-xs text-gray-500">No materials found.</p>
-                        )}
-                        <Link
-                          href="/dashboard/stock/items"
-                          target="_blank"
-                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                        >
-                          + Manage Materials
-                        </Link>
-                      </div>
-                    ) : line.lineType === 'SERVICE' ? (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          placeholder="Service description"
-                          value={line.description || ''}
-                          onChange={(e) => updateLine(index, 'description', e.target.value)}
-                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          placeholder="Expense description"
-                          value={line.description || ''}
-                          onChange={(e) => updateLine(index, 'description', e.target.value)}
-                          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    )}
+                    <input
+                      type="number"
+                      required
+                      min="0.001"
+                      step="0.001"
+                      value={line.quantity || ''}
+                      onChange={(e) => updateLine(index, 'quantity', parseFloat(e.target.value) || null)}
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                    />
                   </td>
                   <td className="px-6 py-4">
-                    {(line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') ? (
-                      <input
-                        type="number"
-                        required={line.lineType === 'MATERIAL'}
-                        min="0.001"
-                        step="0.001"
-                        value={line.quantity || ''}
-                        onChange={(e) => updateLine(index, 'quantity', parseFloat(e.target.value) || null)}
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                      />
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
+                    <input
+                      type="text"
+                      value={line.unit || ''}
+                      onChange={(e) => updateLine(index, 'unit', e.target.value)}
+                      placeholder="Unit (e.g., Pcs, Kg)"
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                    />
                   </td>
                   <td className="px-6 py-4">
-                    {(line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') ? (
-                      <input
-                        type="text"
-                        value={line.unit || ''}
-                        onChange={(e) => updateLine(index, 'unit', e.target.value)}
-                        placeholder="Unit"
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                      />
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="0.01"
+                      value={line.unitRate || ''}
+                      onChange={(e) => updateLine(index, 'unitRate', parseFloat(e.target.value) || null)}
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                    />
                   </td>
                   <td className="px-6 py-4">
-                    {(line.lineType === 'MATERIAL' || line.lineType === 'SERVICE') ? (
-                      <input
-                        type="number"
-                        required={line.lineType === 'MATERIAL'}
-                        min="0"
-                        step="0.01"
-                        value={line.unitRate || ''}
-                        onChange={(e) => updateLine(index, 'unitRate', parseFloat(e.target.value) || null)}
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                      />
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    {line.lineType === 'OTHER' ? (
-                      <input
-                        type="number"
-                        required
-                        min="0"
-                        step="0.01"
-                        value={line.lineTotal || ''}
-                        onChange={(e) => updateLine(index, 'lineTotal', parseFloat(e.target.value) || 0)}
-                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                      />
-                    ) : (
-                      <input
-                        type="number"
-                        readOnly
-                        value={line.lineTotal.toFixed(2)}
-                        className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-gray-900 shadow-sm"
-                      />
-                    )}
+                    <input
+                      type="number"
+                      readOnly
+                      value={line.lineTotal.toFixed(2)}
+                      className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-gray-900 shadow-sm"
+                    />
                   </td>
                   <td className="px-6 py-4">
                     <button
@@ -865,7 +720,12 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
               min="0"
               step="0.01"
               value={formData.paidAmount}
-              onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value })}
+              onChange={(e) => {
+                const newPaidAmount = e.target.value;
+                // Clear payment account if paid amount becomes 0
+                const paymentAccountId = parseFloat(newPaidAmount) > 0 ? formData.paymentAccountId : '';
+                setFormData({ ...formData, paidAmount: newPaidAmount, paymentAccountId });
+              }}
               className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -882,38 +742,38 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         </div>
 
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Account Type + Account Number
-              {parseFloat(formData.paidAmount) > 0 && <span className="text-red-500"> *</span>}
-            </label>
-            <select
-              value={formData.paymentAccountId}
-              onChange={(e) => setFormData({ ...formData, paymentAccountId: e.target.value })}
-              className={`mt-1 block w-full rounded-md border px-3 py-2 text-gray-900 shadow-sm focus:ring-2 focus:ring-blue-500 ${
-                parseFloat(formData.paidAmount) > 0 && !formData.paymentAccountId
-                  ? 'border-red-300 bg-red-50 focus:border-red-500'
-                  : 'border-gray-300 bg-white focus:border-blue-500'
-              }`}
-            >
-              <option value="">Select account</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.code} - {a.name} ({a.type})
-                </option>
-              ))}
-            </select>
-            {parseFloat(formData.paidAmount) > 0 && (
+          {parseFloat(formData.paidAmount) > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Account Type + Account Number <span className="text-red-500">*</span>
+              </label>
+              <select
+                required
+                value={formData.paymentAccountId}
+                onChange={(e) => setFormData({ ...formData, paymentAccountId: e.target.value })}
+                className={`mt-1 block w-full rounded-md border px-3 py-2 text-gray-900 shadow-sm focus:ring-2 focus:ring-blue-500 ${
+                  !formData.paymentAccountId
+                    ? 'border-red-300 bg-red-50 focus:border-red-500'
+                    : 'border-gray-300 bg-white focus:border-blue-500'
+                }`}
+              >
+                <option value="">Select account</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.code} - {a.name} ({a.type})
+                  </option>
+                ))}
+              </select>
               <p className="mt-1 text-xs text-gray-500">
                 Required when Paid Amount &gt; 0
               </p>
-            )}
-            {parseFloat(formData.paidAmount) > 0 && !formData.paymentAccountId && (
-              <p className="mt-1 text-xs text-red-600">
-                Please select a payment account
-              </p>
-            )}
-          </div>
+              {!formData.paymentAccountId && (
+                <p className="mt-1 text-xs text-red-600">
+                  Please select a payment account
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700">Document Files</label>

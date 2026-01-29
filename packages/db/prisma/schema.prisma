@@ -552,6 +552,7 @@ model PurchaseLine {
   unit           String?
   unitRate       Decimal?         @map("unit_rate") @db.Decimal(18, 2)
   description    String?
+  materialName   String?          @map("material_name")
   lineTotal      Decimal          @map("line_total") @db.Decimal(18, 2)
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
