@@ -55,11 +55,11 @@ export async function POST(request: NextRequest) {
       where: { id: validatedData.paymentAccountId },
     });
 
-    if (!paymentAccount || paymentAccount.companyId !== auth.companyId || !paymentAccount.isActive) {
+    if (!paymentAccount || paymentAccount.companyId !== auth.companyId || !paymentAccount.isActive || !paymentAccount.isSystem) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'Payment account not found, inactive, or does not belong to your company',
+          error: 'Payment account not found, inactive, or is not a system account',
         },
         { status: 400 }
       );

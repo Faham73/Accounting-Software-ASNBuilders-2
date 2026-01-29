@@ -2,18 +2,18 @@ import { redirect } from 'next/navigation';
 import { requirePermissionServer } from '@/lib/rbac';
 import { prisma } from '@accounting/db';
 import DashboardLayout from '../../components/DashboardLayout';
-import ProjectForm from '../components/ProjectForm';
+import ProjectDashboardClient from './components/ProjectDashboardClient';
 import ProjectStatementActions from './components/ProjectStatementActions';
 import Link from 'next/link';
 
-export default async function EditProjectPage({
+export default async function ProjectViewPage({
   params,
 }: {
   params: { id: string };
 }) {
   let auth;
   try {
-    auth = await requirePermissionServer('projects', 'WRITE');
+    auth = await requirePermissionServer('projects', 'READ');
   } catch (error) {
     redirect('/forbidden');
   }
@@ -28,23 +28,7 @@ export default async function EditProjectPage({
       id: true,
       name: true,
       clientName: true,
-      clientContact: true,
-      siteLocation: true,
-      startDate: true,
-      expectedEndDate: true,
-      contractValue: true,
       status: true,
-      assignedManager: true,
-      isActive: true,
-      address: true,
-      projectManager: true,
-      projectEngineer: true,
-      companySiteName: true,
-      reference: true,
-      isMain: true,
-      parentProjectId: true,
-      createdAt: true,
-      updatedAt: true,
     },
   });
 
@@ -54,9 +38,15 @@ export default async function EditProjectPage({
 
   return (
     <DashboardLayout
-      title={`Edit Project: ${project.name}`}
+      title={`Project: ${project.name}`}
       actions={
         <div className="flex gap-2 flex-wrap items-center">
+          <Link
+            href={`/dashboard/projects/${params.id}/edit`}
+            className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+          >
+            Edit Project
+          </Link>
           <Link
             href={`/dashboard/projects/${params.id}/ledger`}
             className="py-2 px-4 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100"
@@ -73,7 +63,7 @@ export default async function EditProjectPage({
         </div>
       }
     >
-      <ProjectForm project={project as any} />
+      <ProjectDashboardClient projectId={params.id} projectName={project.name} />
     </DashboardLayout>
   );
 }

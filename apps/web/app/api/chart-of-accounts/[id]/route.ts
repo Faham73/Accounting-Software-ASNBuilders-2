@@ -1,25 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  requirePermission,
+  requireAuth,
   createErrorResponse,
   ForbiddenError,
   UnauthorizedError,
 } from '@/lib/rbac';
 import { prisma } from '@accounting/db';
-import { AccountUpdateSchema } from '@accounting/shared';
-import { ZodError } from 'zod';
-import { createAuditLog } from '@/lib/audit';
 
 /**
  * GET /api/chart-of-accounts/[id]
- * Get account by ID
+ * Get system account by ID (internal use only)
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const auth = await requirePermission(request, 'chartOfAccounts', 'READ');
+    const auth = await requireAuth(request);
 
     const account = await prisma.account.findUnique({
       where: { id: params.id },
@@ -56,6 +53,17 @@ export async function GET(
       );
     }
 
+    // Only return system accounts
+    if (!account.isSystem) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Account not found',
+        },
+        { status: 404 }
+      );
+    }
+
     return NextResponse.json({
       ok: true,
       data: account,
@@ -73,12 +81,20 @@ export async function GET(
 
 /**
  * PATCH /api/chart-of-accounts/[id]
- * Update account
+ * DISABLED: Accounts are system-managed only. System accounts cannot be modified.
  */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: 'Account updates are disabled. Accounts are system-managed only.',
+    },
+    { status: 403 }
+  );
+  /* DISABLED - Accounts are system-managed
   try {
     const auth = await requirePermission(request, 'chartOfAccounts', 'WRITE');
 
@@ -233,16 +249,25 @@ export async function PATCH(
     }
     return createErrorResponse(error instanceof Error ? error : new Error('Unknown error'), 500);
   }
+  */
 }
 
 /**
  * DELETE /api/chart-of-accounts/[id]
- * Delete account (soft delete by setting isActive=false)
+ * DISABLED: Accounts are system-managed only. System accounts cannot be deleted.
  */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: 'Account deletion is disabled. Accounts are system-managed only.',
+    },
+    { status: 403 }
+  );
+  /* DISABLED CODE - kept for reference
   try {
     const auth = await requirePermission(request, 'chartOfAccounts', 'WRITE');
 
@@ -331,4 +356,5 @@ export async function DELETE(
     }
     return createErrorResponse(error instanceof Error ? error : new Error('Unknown error'), 500);
   }
+  */
 }

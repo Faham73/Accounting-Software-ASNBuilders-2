@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
       page: searchParams.get('page') || '1',
       pageSize: searchParams.get('pageSize') || '25',
       projectId: searchParams.get('projectId') || undefined,
+      subProjectId: searchParams.get('subProjectId') || undefined,
       supplierId: searchParams.get('supplierId') || undefined,
       dateFrom: searchParams.get('dateFrom') || undefined,
       dateTo: searchParams.get('dateTo') || undefined,
@@ -39,6 +40,10 @@ export async function GET(request: NextRequest) {
 
     if (filters.projectId) {
       where.projectId = filters.projectId;
+    }
+
+    if (filters.subProjectId) {
+      where.subProjectId = filters.subProjectId;
     }
 
     if (filters.supplierId) {
@@ -208,17 +213,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate payment account if provided
+    // Validate payment account if provided (must be system account)
     if (validatedData.paymentAccountId) {
       const account = await prisma.account.findUnique({
         where: { id: validatedData.paymentAccountId },
       });
 
-      if (!account || account.companyId !== auth.companyId || !account.isActive) {
+      if (!account || account.companyId !== auth.companyId || !account.isActive || !account.isSystem) {
         return NextResponse.json(
           {
             ok: false,
-            error: 'Payment account not found, inactive, or does not belong to your company',
+            error: 'Payment account not found, inactive, or is not a system account',
           },
           { status: 400 }
         );
@@ -298,7 +303,6 @@ export async function POST(request: NextRequest) {
 
               return {
                 lineType: line.lineType,
-                productId: line.productId || null,
                 stockItemId: line.stockItemId || null,
                 quantity: line.quantity ? new Prisma.Decimal(line.quantity) : null,
                 unit: line.unit || null,
@@ -329,9 +333,6 @@ export async function POST(request: NextRequest) {
           },
           lines: {
             include: {
-              product: {
-                select: { id: true, name: true, unit: true },
-              },
               stockItem: {
                 select: { id: true, name: true, unit: true },
               },

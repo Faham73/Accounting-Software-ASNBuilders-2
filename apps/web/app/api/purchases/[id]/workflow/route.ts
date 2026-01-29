@@ -16,8 +16,6 @@ import {
 } from '@/lib/vouchers/workflow';
 import {
   syncPurchaseStatusWithVoucher,
-  createInventoryTxnsForPostedPurchase,
-  createInventoryReversalForPurchase,
 } from '@/lib/purchases/purchaseAccounting.server';
 import {
   createStockMovementsForPostedPurchase,
@@ -172,9 +170,8 @@ export async function POST(
     // Sync purchase status with voucher status
     await syncPurchaseStatusWithVoucher(voucherId, auth.companyId);
 
-    // Create inventory transactions on POST
+    // Create stock movements on POST (handled by stockIntegration.server.ts)
     if (action === 'POST' && workflowResult.voucher?.status === 'POSTED') {
-      await createInventoryTxnsForPostedPurchase(params.id, auth.companyId);
       // Create stock movements for purchase lines with stockItemId
       // Debug: Log material lines before creating stock movements
       const purchaseForDebug = await prisma.purchase.findUnique({
@@ -212,10 +209,8 @@ export async function POST(
       }
     }
 
-    // Create inventory reversal on REVERSE
+    // Reverse stock movements on REVERSE
     if (action === 'REVERSE') {
-      await createInventoryReversalForPurchase(params.id, auth.companyId);
-      // Reverse stock movements
       await reverseStockMovementsForPurchase(params.id, auth.companyId, auth.userId);
     }
 

@@ -21,6 +21,7 @@ interface VoucherLine {
   debit: string | number; // Allow string for UI state (empty while typing)
   credit: string | number; // Allow string for UI state (empty while typing)
   projectId: string;
+  isCompanyLevel: boolean;
 }
 
 interface CreateVoucherFormProps {
@@ -63,11 +64,12 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
         debit: Number(l.debit),
         credit: Number(l.credit),
         projectId: l.projectId || '',
+        isCompanyLevel: l.isCompanyLevel || false,
       }));
     }
     return [
-      { accountId: '', description: '', debit: '', credit: '', projectId: '' },
-      { accountId: '', description: '', debit: '', credit: '', projectId: '' },
+      { accountId: '', description: '', debit: '', credit: '', projectId: '', isCompanyLevel: false },
+      { accountId: '', description: '', debit: '', credit: '', projectId: '', isCompanyLevel: false },
     ];
   });
 
@@ -92,7 +94,7 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
   }, []);
 
   const addLine = () => {
-    setLines([...lines, { accountId: '', description: '', debit: '', credit: '', projectId: '' }]);
+    setLines([...lines, { accountId: '', description: '', debit: '', credit: '', projectId: '', isCompanyLevel: false }]);
   };
 
   const removeLine = (index: number) => {
@@ -158,13 +160,19 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
         narration: formData.narration || null,
         projectId: finalProjectId,
         expenseType: formData.expenseType,
-        lines: lines.map((line) => ({
-          accountId: line.accountId,
-          description: line.description || null,
-          debit: typeof line.debit === 'string' ? parseFloat(line.debit) || 0 : line.debit || 0,
-          credit: typeof line.credit === 'string' ? parseFloat(line.credit) || 0 : line.credit || 0,
-          projectId: formData.expenseType === 'OFFICE_EXPENSE' ? null : (line.projectId || null),
-        })),
+        lines: lines.map((line) => {
+          const isCompanyLevel = line.isCompanyLevel && line.projectId === '';
+          return {
+            accountId: line.accountId,
+            description: line.description || null,
+            debit: typeof line.debit === 'string' ? parseFloat(line.debit) || 0 : line.debit || 0,
+            credit: typeof line.credit === 'string' ? parseFloat(line.credit) || 0 : line.credit || 0,
+            projectId: formData.expenseType === 'OFFICE_EXPENSE' 
+              ? null 
+              : (isCompanyLevel ? null : (line.projectId || null)),
+            isCompanyLevel: formData.expenseType === 'OFFICE_EXPENSE' ? false : isCompanyLevel,
+          };
+        }),
       };
 
       const url = isEdit ? `/api/vouchers/${voucherId}` : '/api/vouchers';
@@ -337,12 +345,24 @@ export default function CreateVoucherForm(props?: CreateVoucherFormProps) {
                   </td>
                   <td className="px-4 py-2">
                     <select
-                      value={line.projectId}
-                      onChange={(e) => updateLine(index, 'projectId', e.target.value)}
+                      value={line.isCompanyLevel ? 'COMPANY' : line.projectId}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === 'COMPANY') {
+                          updateLine(index, 'isCompanyLevel', true);
+                          updateLine(index, 'projectId', '');
+                        } else {
+                          updateLine(index, 'isCompanyLevel', false);
+                          updateLine(index, 'projectId', value);
+                        }
+                      }}
                       disabled={formData.expenseType === 'OFFICE_EXPENSE'}
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
                     >
                       <option value="">{formData.expenseType === 'OFFICE_EXPENSE' ? 'N/A' : 'None'}</option>
+                      {formData.expenseType !== 'OFFICE_EXPENSE' && (
+                        <option value="COMPANY">Company (All Projects)</option>
+                      )}
                       {projects.map((project) => (
                         <option key={project.id} value={project.id}>
                           {project.name}

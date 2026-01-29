@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { requireAuthServer } from '@/lib/rbac';
+import { ensureSystemAccounts } from '@/lib/systemAccounts.server';
 import DashboardLayout from './components/DashboardLayout';
 
 export default async function DashboardPage() {
@@ -9,6 +10,9 @@ export default async function DashboardPage() {
   } catch (error) {
     redirect('/login');
   }
+
+  // Ensure system accounts exist for this company (idempotent)
+  await ensureSystemAccounts(auth.companyId);
 
   const user = auth.user;
 

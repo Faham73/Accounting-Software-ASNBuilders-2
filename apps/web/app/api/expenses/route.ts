@@ -313,12 +313,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify debit account (expense account)
+    // Verify debit account (expense account - must be system account)
     const debitAccount = await prisma.account.findFirst({
       where: {
         id: validatedData.debitAccountId,
         companyId: auth.companyId,
         isActive: true,
+        isSystem: true,
       },
     });
 
@@ -326,18 +327,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'Debit account (expense account) not found or inactive',
+          error: 'Debit account (expense account) not found, inactive, or is not a system account',
         },
         { status: 400 }
       );
     }
 
-    // Verify credit account (payment account)
+    // Verify credit account (payment account - must be system account)
     const creditAccount = await prisma.account.findFirst({
       where: {
         id: validatedData.creditAccountId,
         companyId: auth.companyId,
         isActive: true,
+        isSystem: true,
       },
     });
 

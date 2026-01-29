@@ -31,7 +31,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const autoCreateAccounts = options?.autoCreateAccounts === true;
+    // Accounts are system-managed - auto-creation is disabled
+    const autoCreateAccounts = false; // DISABLED: Accounts are system-managed only
 
     // Validate all vouchers have no blocking errors (excluding "Account not found" if auto-create is enabled)
     const vouchersWithErrors = vouchers.filter((v) => {
@@ -149,15 +150,15 @@ export async function POST(request: NextRequest) {
           }
         }
       }
-    } else if (!autoCreateAccounts) {
-      // Validate all lines have resolved accounts (only if auto-create is disabled)
+    } else {
+      // Validate all lines have resolved accounts (accounts are system-managed, no auto-creation)
       for (const voucher of vouchers) {
         const unresolvedLines = voucher.lines.filter((line) => !line.accountId);
         if (unresolvedLines.length > 0) {
           return NextResponse.json(
             {
               ok: false,
-              error: `Cannot import voucher ${voucher.key}: ${unresolvedLines.length} line(s) have unresolved accounts. Enable "Auto-create missing accounts" to create them automatically.`,
+              error: `Cannot import voucher ${voucher.key}: ${unresolvedLines.length} line(s) have unresolved accounts. All accounts must be system accounts that exist in the system.`,
             },
             { status: 400 }
           );

@@ -34,9 +34,6 @@ export default async function PurchaseDetailPage({ params }: { params: { id: str
       },
       lines: {
         include: {
-          product: {
-            select: { id: true, name: true, unit: true, inventoryAccountId: true },
-          },
           stockItem: {
             select: { id: true, name: true, unit: true },
           },
@@ -190,17 +187,17 @@ export default async function PurchaseDetailPage({ params }: { params: { id: str
                   // Determine item name based on line type
                   const itemName =
                     line.lineType === 'MATERIAL'
-                      ? line.stockItem?.name ?? line.product?.name ?? 'Unknown material'
+                      ? line.stockItem?.name ?? 'Unknown material'
                       : line.description ?? (line.lineType === 'SERVICE' ? 'Service' : 'Other expense');
 
                   // Determine unit based on line type
                   const unit =
                     line.lineType === 'MATERIAL'
-                      ? line.stockItem?.unit ?? line.product?.unit ?? line.unit ?? ''
+                      ? line.stockItem?.unit ?? line.unit ?? ''
                       : line.unit ?? '';
 
-                  // Check if MATERIAL line is missing both stockItem and product (legacy broken)
-                  const isBrokenMaterial = line.lineType === 'MATERIAL' && !line.stockItem && !line.product;
+                  // Check if MATERIAL line is missing stockItem
+                  const isBrokenMaterial = line.lineType === 'MATERIAL' && !line.stockItem;
 
                   // Safe number conversions
                   const qty = Number(line.quantity ?? 0);

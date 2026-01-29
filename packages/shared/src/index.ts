@@ -100,16 +100,6 @@ export {
   type PurchaseLineType,
 } from './schemas/purchase';
 
-// Product schemas
-export {
-  ProductCreateSchema,
-  ProductUpdateSchema,
-  ProductListFiltersSchema,
-  type ProductCreate,
-  type ProductUpdate,
-  type ProductListFilters,
-} from './schemas/product';
-
 // Expense schemas
 export {
   ExpenseCreateSchema,
@@ -143,3 +133,35 @@ export {
   type StockBalanceListFilters,
   type StockMovementListFilters,
 } from './schemas/stock';
+
+// Investment schemas
+export {
+  ProjectInvestmentCreateSchema,
+  ProjectInvestmentUpdateSchema,
+  ProjectInvestmentListFiltersSchema,
+  type ProjectInvestmentCreate,
+  type ProjectInvestmentUpdate,
+  type ProjectInvestmentListFilters,
+} from './schemas/investment';
+
+// Labor schemas
+export {
+  ProjectLaborCreateSchema,
+  ProjectLaborUpdateSchema,
+  ProjectLaborListFiltersSchema,
+  ProjectLaborTypeEnum,
+  type ProjectLaborCreate,
+  type ProjectLaborUpdate,
+  type ProjectLaborListFilters,
+  type ProjectLaborType,
+} from './schemas/labor';
+
+// Credit schemas
+export {
+  CreditCreateSchema,
+  CreditUpdateSchema,
+  CreditListFiltersSchema,
+  type CreditCreate,
+  type CreditUpdate,
+  type CreditListFilters,
+} from './schemas/credit';

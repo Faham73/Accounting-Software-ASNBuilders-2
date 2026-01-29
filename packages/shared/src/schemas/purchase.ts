@@ -16,7 +16,6 @@ export const PurchaseLineTypeEnum = z.enum(['MATERIAL', 'SERVICE', 'OTHER']);
 export const PurchaseLineCreateSchema = z
   .object({
     lineType: PurchaseLineTypeEnum.default('OTHER'),
-    productId: z.string().optional().nullable(),
     stockItemId: z.string().optional().nullable(),
     quantity: z.number().nonnegative('Quantity must be non-negative').optional().nullable(),
     unit: z.string().optional().nullable(),
@@ -25,12 +24,12 @@ export const PurchaseLineCreateSchema = z
     lineTotal: z.number().nonnegative('Line total must be non-negative'),
   })
   .superRefine((data, ctx) => {
-    // MATERIAL lines require stockItemId OR productId (legacy) and quantity > 0
+    // MATERIAL lines require stockItemId and quantity > 0
     if (data.lineType === 'MATERIAL') {
-      if (!data.stockItemId && !data.productId) {
+      if (!data.stockItemId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Stock item or product is required for MATERIAL lines',
+          message: 'Stock item is required for MATERIAL lines',
           path: ['stockItemId'],
         });
       }
@@ -176,6 +175,7 @@ export const PurchaseListFiltersSchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(25),
   projectId: z.string().optional(),
+  subProjectId: z.string().optional(),
   supplierId: z.string().optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),

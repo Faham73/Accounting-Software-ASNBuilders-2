@@ -154,6 +154,7 @@ export async function POST(request: NextRequest) {
         id: { in: accountIds },
         companyId: auth.companyId,
         isActive: true,
+        isSystem: true, // Only system accounts are allowed
       },
     });
 
@@ -161,7 +162,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'One or more accounts not found, inactive, or do not belong to your company',
+          error: 'One or more accounts not found, inactive, or are not system accounts',
         },
         { status: 400 }
       );
@@ -217,7 +218,10 @@ export async function POST(request: NextRequest) {
               description: line.description || null,
               debit: line.debit,
               credit: line.credit,
-              projectId: validatedData.expenseType === 'OFFICE_EXPENSE' ? null : (line.projectId || null),
+              projectId: validatedData.expenseType === 'OFFICE_EXPENSE' 
+                ? null 
+                : (line.isCompanyLevel ? null : (line.projectId || null)),
+              isCompanyLevel: validatedData.expenseType === 'OFFICE_EXPENSE' ? false : (line.isCompanyLevel || false),
               vendorId: line.vendorId || null,
               paymentMethodId: line.paymentMethodId || null,
             })),

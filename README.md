@@ -43,7 +43,8 @@ Construction accounting web application built with Next.js and PostgreSQL.
    npm run db:seed
    ```
    Or from `packages/db`: `npx prisma db seed` (uses `prisma.seed` in package.json).  
-   Seed is idempotent; demo users use password `password123`.
+   Seed is idempotent; demo users use password `password123`.  
+   **Stock**: By default, stock items/movements/balances are **not** seeded. To include them, run `SEED_STOCK=true npm run db:seed`.
 
 7. **Start development server:**
    ```bash
@@ -76,3 +77,6 @@ Construction accounting web application built with Next.js and PostgreSQL.
 - `npm run db:up` - Start PostgreSQL with Docker
 - `npm run db:down` - Stop PostgreSQL Docker container
 - `npm run prisma:studio` - Open Prisma Studio (database GUI)
+- `npm run reset:stock` - **Dev-only.** Delete all stock data (StockMovement, InventoryTxn, ProjectStockSetting, StockBalance, StockItem; clears `stockItemId` on purchase lines). Requires `NODE_ENV=development` or `ALLOW_RESET=YES`.
+
+**Full DB reset (wipe everything):** From `packages/db`, run `npx prisma migrate reset --force`. Use with caution; not run by default.

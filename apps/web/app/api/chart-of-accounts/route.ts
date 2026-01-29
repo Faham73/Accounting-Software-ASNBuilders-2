@@ -1,22 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  requirePermission,
+  requireAuth,
   createErrorResponse,
   ForbiddenError,
   UnauthorizedError,
 } from '@/lib/rbac';
 import { prisma } from '@accounting/db';
-import { AccountCreateSchema, AccountListFiltersSchema } from '@accounting/shared';
+import { AccountListFiltersSchema } from '@accounting/shared';
 import { ZodError } from 'zod';
-import { createAuditLog } from '@/lib/audit';
 
 /**
  * GET /api/chart-of-accounts
- * List accounts for user's company with optional filters
+ * List system accounts for internal use (vouchers/reports)
+ * Note: This endpoint is for internal use only. Accounts are system-managed.
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requirePermission(request, 'chartOfAccounts', 'READ');
+    // No permission check needed - accounts are read-only for UI, used internally
+    const auth = await requireAuth(request);
 
     const { searchParams } = new URL(request.url);
     const filters = AccountListFiltersSchema.parse({
@@ -49,8 +50,12 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    // Only return system accounts for internal use (vouchers/reports)
     const accounts = await prisma.account.findMany({
-      where,
+      where: {
+        ...where,
+        isSystem: true, // Only system accounts are accessible
+      },
       orderBy: [{ code: 'asc' }],
       include: {
         parent: {
@@ -91,105 +96,14 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/chart-of-accounts
- * Create a new account
+ * DISABLED: Accounts are system-managed only. Use ensureSystemAccounts() service instead.
  */
 export async function POST(request: NextRequest) {
-  try {
-    const auth = await requirePermission(request, 'chartOfAccounts', 'WRITE');
-
-    const body = await request.json();
-    const validatedData = AccountCreateSchema.parse(body);
-
-    // Validate parent belongs to same company if provided
-    if (validatedData.parentId) {
-      const parent = await prisma.account.findUnique({
-        where: { id: validatedData.parentId },
-      });
-
-      if (!parent || parent.companyId !== auth.companyId) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: 'Parent account not found or does not belong to your company',
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Check code uniqueness
-    const existing = await prisma.account.findUnique({
-      where: {
-        companyId_code: {
-          companyId: auth.companyId,
-          code: validatedData.code,
-        },
-      },
-    });
-
-    if (existing) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: 'Account code already exists for this company',
-        },
-        { status: 400 }
-      );
-    }
-
-    const account = await prisma.account.create({
-      data: {
-        companyId: auth.companyId,
-        code: validatedData.code,
-        name: validatedData.name,
-        type: validatedData.type,
-        parentId: validatedData.parentId || null,
-        isActive: validatedData.isActive ?? true,
-      },
-      include: {
-        parent: {
-          select: { id: true, code: true, name: true },
-        },
-        children: {
-          select: { id: true },
-        },
-      },
-    });
-
-    // Create audit log
-    await createAuditLog({
-      companyId: auth.companyId,
-      actorUserId: auth.userId,
-      entityType: 'ACCOUNT',
-      entityId: account.id,
-      action: 'CREATE',
-      after: account,
-      request,
-    });
-
-    return NextResponse.json(
-      {
-        ok: true,
-        data: account,
-      },
-      { status: 201 }
-    );
-  } catch (error) {
-    if (error instanceof ZodError) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: error.errors[0]?.message || 'Validation error',
-        },
-        { status: 400 }
-      );
-    }
-    if (error instanceof UnauthorizedError) {
-      return createErrorResponse(error, 401);
-    }
-    if (error instanceof ForbiddenError) {
-      return createErrorResponse(error, 403);
-    }
-    return createErrorResponse(error instanceof Error ? error : new Error('Unknown error'), 500);
-  }
+  return NextResponse.json(
+    {
+      ok: false,
+      error: 'Account creation is disabled. Accounts are system-managed only.',
+    },
+    { status: 403 }
+  );
 }

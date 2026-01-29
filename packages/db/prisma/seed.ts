@@ -235,17 +235,25 @@ async function seedCompany(name: string): Promise<SeedContext> {
     { code: '5090', name: 'Misc Expense', type: AccountType.EXPENSE, parentCode: '5000' },
   ];
 
+  // Create system accounts (all accounts are system-managed)
   for (const a of accounts) {
     const parentId = a.parentCode ? (ctx.accountIdsByCode[a.parentCode] ?? null) : null;
     const acc = await prisma.account.upsert({
       where: { companyId_code: { companyId: company.id, code: a.code } },
-      update: { parentId: parentId ?? undefined },
+      update: {
+        parentId: parentId ?? undefined,
+        isSystem: true,
+        locked: true,
+        isActive: true,
+      },
       create: {
         companyId: company.id,
         code: a.code,
         name: a.name,
         type: a.type,
         parentId,
+        isSystem: true,
+        locked: true,
         isActive: true,
       },
     });
@@ -676,7 +684,9 @@ async function seedCompany(name: string): Promise<SeedContext> {
     });
   }
 
-  // Seed stock items
+  // Seed stock items (only when SEED_STOCK=true; default: do not seed stock)
+  const stockItemIds: string[] = [];
+  if (process.env.SEED_STOCK === 'true') {
   const stockItemsData = [
     { name: 'Cement', sku: 'STK-CEM-001', unit: 'bag', category: 'Construction Materials', reorderLevel: 50 },
     { name: 'Steel Rod', sku: 'STK-STL-001', unit: 'kg', category: 'Construction Materials', reorderLevel: 500 },
@@ -692,7 +702,6 @@ async function seedCompany(name: string): Promise<SeedContext> {
     { name: 'Screws', sku: 'STK-SCR-001', unit: 'kg', category: 'Hardware', reorderLevel: 5 },
   ];
 
-  const stockItemIds: string[] = [];
   for (const itemData of stockItemsData) {
     const existing = await prisma.stockItem.findFirst({
       where: {
@@ -876,6 +885,7 @@ async function seedCompany(name: string): Promise<SeedContext> {
       }
     }
   }
+  }
 
   // Seed purchases with mixed line types (MATERIAL, SERVICE, OTHER)
   if (stockItemIds.length > 0 && ctx.vendorIds.length > 0) {
@@ -975,10 +985,9 @@ async function seedCompany(name: string): Promise<SeedContext> {
           dueAmount,
         },
       });
-    }
 
-    // POST the first purchase with MATERIAL lines to create stock movements
-    if (i === 0) {
+      // POST the first purchase with MATERIAL lines to create stock movements
+      if (i === 0) {
       // Reload purchase with MATERIAL lines and related data
       const purchaseToPost = await prisma.purchase.findUnique({
         where: {
@@ -1142,6 +1151,7 @@ async function seedCompany(name: string): Promise<SeedContext> {
 
           console.log(`✅ Posted purchase ${purchaseToPost.challanNo || purchaseToPost.id} with ${purchaseToPost.lines.length} MATERIAL line(s)`);
         }
+      }
       }
     }
   }

@@ -23,10 +23,8 @@ export default async function DashboardLayout({
   const canReadProjects = can(role, 'projects', 'READ');
   const canReadVendors = can(role, 'vendors', 'READ');
   const canReadPaymentMethods = can(role, 'paymentMethods', 'READ');
-  const canReadChartOfAccounts = can(role, 'chartOfAccounts', 'READ');
   const canReadVouchers = can(role, 'vouchers', 'READ');
   const canReadPurchases = can(role, 'purchases', 'READ');
-  const canReadProducts = can(role, 'products', 'READ');
   const canReadExpenses = can(role, 'expenses', 'READ');
   const canReadStock = can(role, 'stock', 'READ');
   const canWriteProjects = can(role, 'projects', 'WRITE');
@@ -81,14 +79,6 @@ export default async function DashboardLayout({
                   Payment Methods {canWritePaymentMethods && '✏️'}
                 </Link>
               )}
-              {canReadChartOfAccounts && (
-                <Link
-                  href="/dashboard/chart-of-accounts"
-                  className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
-                >
-                  Chart of Accounts
-                </Link>
-              )}
               {canReadVouchers && (
                 <Link
                   href="/dashboard/vouchers"
@@ -103,14 +93,6 @@ export default async function DashboardLayout({
                   className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
                 >
                   Purchases
-                </Link>
-              )}
-              {canReadProducts && (
-                <Link
-                  href="/dashboard/products"
-                  className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
-                >
-                  Products {can(role, 'products', 'WRITE') && '✏️'}
                 </Link>
               )}
               {canReadExpenses && (
@@ -160,6 +142,28 @@ export default async function DashboardLayout({
                     className="block px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-md ml-4"
                   >
                     Stock Ledger
+                  </Link>
+                </>
+              )}
+              {canReadVouchers && (
+                <>
+                  <Link
+                    href="/dashboard/investments"
+                    className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                  >
+                    Total Investment
+                  </Link>
+                  <Link
+                    href="/dashboard/debit"
+                    className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                  >
+                    Total Debit
+                  </Link>
+                  <Link
+                    href="/dashboard/credit"
+                    className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                  >
+                    Total Credit
                   </Link>
                 </>
               )}

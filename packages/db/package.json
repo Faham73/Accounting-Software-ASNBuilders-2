@@ -7,8 +7,12 @@
   "scripts": {
     "prisma:generate": "dotenv -e ../../.env -- prisma generate",
     "prisma:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "prisma:migrate:name": "dotenv -e ../../.env -- prisma migrate dev --name",
     "prisma:studio": "dotenv -e ../../.env -- prisma studio",
-    "db:seed": "dotenv -e ../../.env -- tsx prisma/seed.ts"
+    "db:seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
+    "reset:stock": "dotenv -e ../../.env -- tsx scripts/resetStockData.ts",
+    "migrate:credits": "dotenv -e ../../.env -- tsx scripts/migrateCreditsToPdfFields.ts",
+    "release:lock": "dotenv -e ../../.env -- tsx scripts/releaseAdvisoryLock.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, FormEvent, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 type PurchaseLineType = 'MATERIAL' | 'SERVICE' | 'OTHER';
@@ -9,7 +9,6 @@ type PurchaseLineType = 'MATERIAL' | 'SERVICE' | 'OTHER';
 interface PurchaseLine {
   id?: string;
   lineType: PurchaseLineType;
-  productId?: string | null;
   stockItemId?: string | null;
   quantity?: number | null;
   unit?: string | null;
@@ -38,11 +37,12 @@ interface Purchase {
   paymentAccountId: string | null;
   lines: Array<{
     id: string;
-    productId: string;
-    quantity: number;
-    unitPrice: number;
+    stockItemId: string | null;
+    quantity: number | null;
+    unit: string | null;
+    unitRate: number | null;
     lineTotal: number;
-    product: { id: string; name: string; unit: string };
+    stockItem?: { id: string; name: string; unit: string } | null;
   }>;
   attachments: PurchaseAttachment[];
 }
@@ -56,12 +56,6 @@ interface Project {
   name: string;
   isMain: boolean;
   parentProjectId: string | null;
-}
-
-interface Product {
-  id: string;
-  name: string;
-  unit: string;
 }
 
 interface StockItem {
@@ -99,20 +93,34 @@ function toDateInputValue(input: unknown): string {
 
 export default function PurchaseForm({ purchase }: PurchaseFormProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAddVendorModal, setShowAddVendorModal] = useState(false);
+  const [isCreatingVendor, setIsCreatingVendor] = useState(false);
+  const [newVendorData, setNewVendorData] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    notes: '',
+  });
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [subProjects, setSubProjects] = useState<Project[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [isLoadingVendors, setIsLoadingVendors] = useState(false);
+  const [isLoadingStockItems, setIsLoadingStockItems] = useState(false);
+
+  // Get projectId and returnTo from URL if launched from project dashboard
+  const projectIdFromUrl = searchParams.get('projectId') || '';
+  const returnTo = searchParams.get('returnTo') || '';
 
   const [formData, setFormData] = useState({
     date: toDateInputValue(purchase?.date || new Date()),
     challanNo: purchase?.challanNo || '',
-    projectId: purchase?.projectId || '',
+    projectId: purchase?.projectId || projectIdFromUrl || '',
     subProjectId: purchase?.subProjectId || '',
     supplierVendorId: purchase?.supplierVendorId || '',
     reference: purchase?.reference || '',
@@ -121,11 +129,13 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     paymentAccountId: purchase?.paymentAccountId || '',
   });
 
+  // Determine if project should be disabled (preselected from project dashboard)
+  const isProjectPreselected = Boolean(projectIdFromUrl && !purchase);
+
   const [lines, setLines] = useState<PurchaseLine[]>(
     purchase?.lines.map((l: any) => ({
       id: l.id,
       lineType: (l.lineType || 'OTHER') as PurchaseLineType,
-      productId: l.productId || null,
       stockItemId: l.stockItemId || null,
       quantity: l.quantity ? Number(l.quantity) : null,
       unit: l.unit || null,
@@ -139,45 +149,106 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     purchase?.attachments || []
   );
 
-  // Fetch dropdown data
+  // Fetch dropdown data and handle project preselection
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [projectsRes, productsRes, stockItemsRes, vendorsRes, accountsRes] = await Promise.all([
-          fetch('/api/projects?status=all&active=all'),
-          fetch('/api/products'),
-          fetch('/api/stock/items?isActive=true'),
-          fetch('/api/vendors'),
-          fetch('/api/chart-of-accounts?active=true'),
-        ]);
-
-        const [projectsData, productsData, stockItemsData, vendorsData, accountsData] = await Promise.all([
-          projectsRes.json(),
-          productsRes.json(),
-          stockItemsRes.json(),
-          vendorsRes.json(),
-          accountsRes.json(),
-        ]);
-
+        // Fetch projects
+        const projectsRes = await fetch('/api/projects?status=all&active=all');
+        const projectsData = await projectsRes.json();
+        
         if (projectsData.ok) {
-          const mainProjects = projectsData.data.filter((p: Project) => p.isMain);
+          const allProjects = projectsData.data;
+          const mainProjects = allProjects.filter((p: Project) => p.isMain);
           setProjects(mainProjects);
-          if (formData.projectId) {
-            const subs = projectsData.data.filter(
-              (p: Project) => p.parentProjectId === formData.projectId
-            );
-            setSubProjects(subs);
+          
+          // Handle project preselection from URL
+          if (projectIdFromUrl) {
+            const selectedProject = allProjects.find((p: Project) => p.id === projectIdFromUrl);
+            if (selectedProject) {
+              if (selectedProject.isMain) {
+                // It's a main project - set as main project and show its sub-projects
+                setFormData((prev) => ({
+                  ...prev,
+                  projectId: projectIdFromUrl,
+                  subProjectId: '',
+                }));
+                const subs = allProjects.filter(
+                  (p: Project) => p.parentProjectId === projectIdFromUrl
+                );
+                setSubProjects(subs);
+              } else {
+                // It's a sub-project - set main project and sub-project
+                setFormData((prev) => ({
+                  ...prev,
+                  projectId: selectedProject.parentProjectId || projectIdFromUrl,
+                  subProjectId: projectIdFromUrl,
+                }));
+                const subs = allProjects.filter(
+                  (p: Project) => p.parentProjectId === selectedProject.parentProjectId
+                );
+                setSubProjects(subs);
+              }
+            }
+          } else if (formData.projectId) {
+            // Handle existing projectId from formData (edit mode)
+            const selectedProject = allProjects.find((p: Project) => p.id === formData.projectId);
+            if (selectedProject) {
+              const subs = allProjects.filter(
+                (p: Project) => p.parentProjectId === formData.projectId
+              );
+              setSubProjects(subs);
+            }
           }
         } else {
           console.error('Failed to fetch projects:', projectsData);
         }
 
-        if (productsData.ok) setProducts(productsData.data);
-        if (stockItemsData.ok) setStockItems(stockItemsData.data);
-        if (vendorsData.ok) setVendors(vendorsData.data);
+        // Fetch stock items
+        setIsLoadingStockItems(true);
+        try {
+          const stockItemsRes = await fetch('/api/stock/items?isActive=true&pageSize=1000', {
+            credentials: 'include',
+          });
+          const stockItemsData = await stockItemsRes.json();
+          if (stockItemsData.ok) {
+            setStockItems(stockItemsData.data || []);
+          } else {
+            console.error('Failed to fetch stock items:', stockItemsData);
+          }
+        } catch (err) {
+          console.error('Failed to fetch stock items:', err);
+        } finally {
+          setIsLoadingStockItems(false);
+        }
+
+        // Fetch vendors (active vendors by default)
+        setIsLoadingVendors(true);
+        try {
+          const vendorsRes = await fetch('/api/vendors', {
+            credentials: 'include',
+          });
+          const vendorsData = await vendorsRes.json();
+          if (vendorsData.ok) {
+            // Filter to active vendors on client side if needed
+            const activeVendors = (vendorsData.data || []).filter((v: Vendor & { isActive?: boolean }) => v.isActive !== false);
+            setVendors(activeVendors);
+          } else {
+            console.error('Failed to fetch vendors:', vendorsData);
+            setError(vendorsData.error || 'Failed to load vendors');
+          }
+        } catch (err) {
+          console.error('Failed to fetch vendors:', err);
+          setError('Failed to load vendors. Please refresh the page.');
+        } finally {
+          setIsLoadingVendors(false);
+        }
+
+        // Fetch accounts
+        const accountsRes = await fetch('/api/chart-of-accounts?active=true');
+        const accountsData = await accountsRes.json();
         if (accountsData.ok) {
           // Filter to leaf accounts (accounts that don't have children)
-          // We'll need to check if any other account has this as parent
           const allAccounts = accountsData.data;
           const accountIds = new Set(allAccounts.map((a: Account) => a.id));
           const parentIds = new Set(allAccounts.map((a: Account & { parentId?: string }) => a.parentId).filter(Boolean));
@@ -190,11 +261,16 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     };
 
     fetchData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectIdFromUrl]); // Only re-run if projectIdFromUrl changes
 
 
-  // Update sub-projects when main project changes
+  // Update sub-projects when main project changes (only if not preselected)
   useEffect(() => {
+    if (isProjectPreselected) {
+      return; // Don't update if project is preselected
+    }
+
     const fetchSubProjects = async () => {
       if (!formData.projectId) {
         setSubProjects([]);
@@ -221,14 +297,13 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     };
 
     fetchSubProjects();
-  }, [formData.projectId]);
+  }, [formData.projectId, isProjectPreselected]);
 
   const addLine = () => {
     setLines([
       ...lines,
       {
         lineType: 'OTHER',
-        productId: null,
         stockItemId: null,
         quantity: null,
         unit: null,
@@ -254,7 +329,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         newLines[index] = {
           ...line,
           lineType: value,
-          productId: null,
           stockItemId: null,
           quantity: null,
           unit: null,
@@ -266,7 +340,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         newLines[index] = {
           ...line,
           lineType: value,
-          productId: null,
           stockItemId: null,
           quantity: null,
           unit: null,
@@ -278,7 +351,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         newLines[index] = {
           ...line,
           lineType: value,
-          productId: null,
           stockItemId: null,
           quantity: null,
           unit: null,
@@ -367,7 +439,7 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
       return;
     }
     if (lines.length === 0) {
-      setError('At least one product line is required');
+      setError('At least one line item is required');
       return;
     }
 
@@ -431,7 +503,6 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         paymentAccountId: formData.paymentAccountId || null,
         lines: lines.map((line) => ({
           lineType: line.lineType,
-          productId: line.productId || null,
           stockItemId: line.stockItemId || null,
           quantity: line.quantity || null,
           unit: line.unit || null,
@@ -454,7 +525,12 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
       const data = await response.json();
 
       if (data.ok) {
-        router.push('/dashboard/purchases');
+        // Navigate back to project purchases list if returnTo is provided, otherwise go to main purchases list
+        if (returnTo) {
+          router.push(returnTo);
+        } else {
+          router.push('/dashboard/purchases');
+        }
         router.refresh();
       } else {
         setError(data.error || 'Failed to save purchase');
@@ -505,7 +581,10 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
             required
             value={formData.projectId}
             onChange={(e) => setFormData({ ...formData, projectId: e.target.value, subProjectId: '' })}
-            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+            disabled={isProjectPreselected}
+            className={`mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 ${
+              isProjectPreselected ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'
+            }`}
           >
             <option value="">Select project</option>
             {projects.map((p) => (
@@ -514,6 +593,9 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
               </option>
             ))}
           </select>
+          {isProjectPreselected && (
+            <p className="mt-1 text-xs text-gray-500">Project preselected from project dashboard</p>
+          )}
           {projects.length === 0 && (
             <p className="mt-1 text-xs text-gray-500">No main projects found. Please create a main project first.</p>
           )}
@@ -524,8 +606,12 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
           <select
             value={formData.subProjectId}
             onChange={(e) => setFormData({ ...formData, subProjectId: e.target.value })}
-            disabled={!formData.projectId || subProjects.length === 0}
-            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+            disabled={isProjectPreselected || !formData.projectId || subProjects.length === 0}
+            className={`mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 ${
+              isProjectPreselected || !formData.projectId || subProjects.length === 0
+                ? 'bg-gray-100 cursor-not-allowed text-gray-500'
+                : 'bg-white'
+            }`}
           >
             <option value="">None</option>
             {subProjects.map((p) => (
@@ -537,20 +623,33 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">Vendor *</label>
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-medium text-gray-700">Vendor *</label>
+            <button
+              type="button"
+              onClick={() => setShowAddVendorModal(true)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              + Add Vendor
+            </button>
+          </div>
           <select
             required
             value={formData.supplierVendorId}
             onChange={(e) => setFormData({ ...formData, supplierVendorId: e.target.value })}
-            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+            disabled={isLoadingVendors}
+            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
           >
-            <option value="">Select vendor</option>
+            <option value="">{isLoadingVendors ? 'Loading vendors...' : 'Select vendor'}</option>
             {vendors.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.name}
               </option>
             ))}
           </select>
+          {vendors.length === 0 && !isLoadingVendors && (
+            <p className="mt-1 text-xs text-gray-500">No vendors found. Click "+ Add Vendor" to create one.</p>
+          )}
         </div>
 
         <div>
@@ -614,13 +713,16 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
                           onChange={(e) => updateLine(index, 'stockItemId', e.target.value)}
                           className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                         >
-                          <option value="">Select material</option>
+                          <option value="">{isLoadingStockItems ? 'Loading materials...' : 'Select material'}</option>
                           {stockItems.map((si) => (
                             <option key={si.id} value={si.id}>
-                              {si.name}
+                              {si.name} {si.unit ? `(${si.unit})` : ''}
                             </option>
                           ))}
                         </select>
+                        {stockItems.length === 0 && !isLoadingStockItems && (
+                          <p className="mt-1 text-xs text-gray-500">No materials found.</p>
+                        )}
                         <Link
                           href="/dashboard/stock/items"
                           target="_blank"
@@ -849,7 +951,13 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
       <div className="flex justify-end space-x-4">
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => {
+            if (returnTo) {
+              router.push(returnTo);
+            } else {
+              router.back();
+            }
+          }}
           className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
         >
           Cancel
@@ -863,6 +971,122 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         </button>
       </div>
 
+      {/* Add Vendor Modal */}
+      {showAddVendorModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-bold mb-4">Add New Vendor</h2>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setIsCreatingVendor(true);
+                try {
+                  const response = await fetch('/api/vendors', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                      name: newVendorData.name,
+                      phone: newVendorData.phone || undefined,
+                      address: newVendorData.address || undefined,
+                      notes: newVendorData.notes || undefined,
+                      isActive: true,
+                    }),
+                  });
+
+                  const data = await response.json();
+                  if (data.ok) {
+                    // Add new vendor to list and select it
+                    const newVendor = data.data;
+                    setVendors([...vendors, newVendor]);
+                    setFormData((prev) => ({ ...prev, supplierVendorId: newVendor.id }));
+                    setShowAddVendorModal(false);
+                    setNewVendorData({ name: '', phone: '', address: '', notes: '' });
+                  } else {
+                    alert(data.error || 'Failed to create vendor');
+                  }
+                } catch (err) {
+                  alert('Failed to create vendor');
+                  console.error(err);
+                } finally {
+                  setIsCreatingVendor(false);
+                }
+              }}
+            >
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Vendor Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newVendorData.name}
+                    onChange={(e) => setNewVendorData({ ...newVendorData, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    placeholder="Enter vendor name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Phone
+                  </label>
+                  <input
+                    type="text"
+                    value={newVendorData.phone}
+                    onChange={(e) => setNewVendorData({ ...newVendorData, phone: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    placeholder="Enter phone number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Address
+                  </label>
+                  <textarea
+                    value={newVendorData.address}
+                    onChange={(e) => setNewVendorData({ ...newVendorData, address: e.target.value })}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    placeholder="Enter address"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    value={newVendorData.notes}
+                    onChange={(e) => setNewVendorData({ ...newVendorData, notes: e.target.value })}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    placeholder="Enter notes (optional)"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-6">
+                <button
+                  type="submit"
+                  disabled={isCreatingVendor}
+                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isCreatingVendor ? 'Creating...' : 'Create Vendor'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddVendorModal(false);
+                    setNewVendorData({ name: '', phone: '', address: '', notes: '' });
+                  }}
+                  className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </form>
   );
 }

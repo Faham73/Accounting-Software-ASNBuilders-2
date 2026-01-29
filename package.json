@@ -13,10 +13,14 @@
     "lint": "npm run lint --workspace=apps/web",
     "db:generate": "npm run prisma:generate --workspace=packages/db",
     "db:migrate": "npm run prisma:migrate --workspace=packages/db",
+    "db:migrate:name": "npm run prisma:migrate:name --workspace=packages/db --",
     "db:seed": "npm run db:seed --workspace=packages/db",
     "prisma:studio": "npm run prisma:studio --workspace=packages/db",
     "db:up": "docker-compose up -d",
-    "db:down": "docker-compose down"
+    "db:down": "docker-compose down",
+    "reset:stock": "npm run reset:stock --workspace=packages/db",
+    "migrate:credits": "npm run migrate:credits --workspace=packages/db",
+    "release:lock": "npm run release:lock --workspace=packages/db"
   },
   "devDependencies": {
     "typescript": "^5.3.3",

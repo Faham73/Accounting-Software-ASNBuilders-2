@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 interface StockItem {
@@ -22,15 +22,26 @@ interface Vendor {
 
 export default function ReceiveStockForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [isLoadingItems, setIsLoadingItems] = useState(false);
+  const [itemsError, setItemsError] = useState<string | null>(null);
+  const [showVendorModal, setShowVendorModal] = useState(false);
+  const [isCreatingVendor, setIsCreatingVendor] = useState(false);
+  const [vendorFormData, setVendorFormData] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    notes: '',
+  });
   const [formData, setFormData] = useState({
     stockItemId: '',
     qty: '',
     unitCost: '',
-    projectId: '',
+    projectId: searchParams.get('projectId') || '',
     vendorId: '',
     referenceType: '',
     referenceId: '',
@@ -40,12 +51,23 @@ export default function ReceiveStockForm() {
 
   useEffect(() => {
     // Fetch stock items
+    setIsLoadingItems(true);
+    setItemsError(null);
     fetch('/api/stock/items?pageSize=1000&isActive=true')
       .then((res) => res.json())
       .then((data) => {
         if (data.ok) {
-          setStockItems(data.data);
+          setStockItems(data.data ?? []);
+        } else {
+          setItemsError(data.error || 'Failed to load stock items');
         }
+      })
+      .catch((error) => {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        setItemsError(errMsg || 'Failed to load stock items');
+      })
+      .finally(() => {
+        setIsLoadingItems(false);
       });
 
     // Fetch projects
@@ -53,19 +75,65 @@ export default function ReceiveStockForm() {
       .then((res) => res.json())
       .then((data) => {
         if (data.ok) {
-          setProjects(data.data);
+          setProjects(data.data ?? []);
         }
+      })
+      .catch(() => {
+        // Silently fail for projects/vendors
       });
 
     // Fetch vendors
-    fetch('/api/vendors?pageSize=1000')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.ok) {
-          setVendors(data.data);
-        }
-      });
+    loadVendors();
   }, []);
+
+  const loadVendors = async () => {
+    try {
+      const res = await fetch('/api/vendors?pageSize=1000');
+      const data = await res.json();
+      if (data.ok) {
+        setVendors(data.data ?? []);
+      }
+    } catch {
+      // Silently fail for vendors
+    }
+  };
+
+  const handleCreateVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreatingVendor(true);
+
+    try {
+      const response = await fetch('/api/vendors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: vendorFormData.name,
+          phone: vendorFormData.phone || undefined,
+          address: vendorFormData.address || undefined,
+          notes: vendorFormData.notes || undefined,
+          isActive: true,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.ok) {
+        // Refresh vendors list
+        await loadVendors();
+        // Auto-select the newly created vendor
+        setFormData({ ...formData, vendorId: data.data.id });
+        // Close modal and reset form
+        setShowVendorModal(false);
+        setVendorFormData({ name: '', phone: '', address: '', notes: '' });
+      } else {
+        alert(data.error || 'Failed to create vendor');
+      }
+    } catch (error) {
+      alert('An error occurred while creating vendor');
+    } finally {
+      setIsCreatingVendor(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,7 +160,13 @@ export default function ReceiveStockForm() {
 
       if (data.ok) {
         alert('Stock received successfully!');
-        router.push('/dashboard/stock');
+        // Redirect back to project dashboard if projectId exists, otherwise go to stock page
+        const projectIdFromUrl = searchParams.get('projectId');
+        if (projectIdFromUrl) {
+          router.push(`/dashboard/projects/${projectIdFromUrl}`);
+        } else {
+          router.push('/dashboard/stock');
+        }
       } else {
         alert(data.error || 'Failed to receive stock');
         setIsSubmitting(false);
@@ -115,7 +189,7 @@ export default function ReceiveStockForm() {
           <div className="mt-1 text-sm text-red-600">
             {itemsError}
           </div>
-        ) : stockItems.length === 0 ? (
+        ) : (stockItems ?? []).length === 0 ? (
           <div className="mt-1 space-y-2">
             <div className="text-sm text-amber-600">
               No materials found. Create materials in Stock Items.
@@ -201,7 +275,8 @@ export default function ReceiveStockForm() {
             id="projectId"
             value={formData.projectId}
             onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
-            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+            disabled={!!searchParams.get('projectId')}
+            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
           >
             <option value="">None</option>
             {projects.map((project) => (
@@ -210,12 +285,24 @@ export default function ReceiveStockForm() {
               </option>
             ))}
           </select>
+          {searchParams.get('projectId') && (
+            <p className="mt-1 text-xs text-gray-500">Project is locked for this session</p>
+          )}
         </div>
 
         <div>
-          <label htmlFor="vendorId" className="block text-sm font-medium text-gray-700">
-            Vendor
-          </label>
+          <div className="flex items-center justify-between">
+            <label htmlFor="vendorId" className="block text-sm font-medium text-gray-700">
+              Vendor
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowVendorModal(true)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              + Add Vendor
+            </button>
+          </div>
           <select
             id="vendorId"
             value={formData.vendorId}
@@ -290,6 +377,93 @@ export default function ReceiveStockForm() {
           Cancel
         </button>
       </div>
+
+      {/* Add Vendor Modal */}
+      {showVendorModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-bold mb-4">Add Vendor</h2>
+            <form onSubmit={handleCreateVendor}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Vendor Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={vendorFormData.name}
+                  onChange={(e) =>
+                    setVendorFormData({ ...vendorFormData, name: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="Enter vendor name"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone
+                </label>
+                <input
+                  type="text"
+                  value={vendorFormData.phone}
+                  onChange={(e) =>
+                    setVendorFormData({ ...vendorFormData, phone: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="Enter phone number"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Address
+                </label>
+                <input
+                  type="text"
+                  value={vendorFormData.address}
+                  onChange={(e) =>
+                    setVendorFormData({ ...vendorFormData, address: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="Enter address"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes
+                </label>
+                <textarea
+                  value={vendorFormData.notes}
+                  onChange={(e) =>
+                    setVendorFormData({ ...vendorFormData, notes: e.target.value })
+                  }
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="Enter notes (optional)"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={isCreatingVendor}
+                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isCreatingVendor ? 'Creating...' : 'Create Vendor'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowVendorModal(false);
+                    setVendorFormData({ name: '', phone: '', address: '', notes: '' });
+                  }}
+                  className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </form>
   );
 }

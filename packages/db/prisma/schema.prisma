@@ -79,10 +79,26 @@ enum ExpenseSource {
   LABOR
 }
 
+enum ProjectLaborType {
+  DAY
+  MONTHLY
+}
+
 enum StockMovementType {
   IN
   OUT
   ADJUST
+}
+
+enum StockMovementKind {
+  OPENING
+  RECEIVE
+  ISSUE
+  TRANSFER_IN
+  TRANSFER_OUT
+  RETURN_IN
+  WASTAGE
+  ADJUSTMENT
 }
 
 enum PurchaseStatus {
@@ -119,15 +135,17 @@ model Company {
   overheadAllocationRules  OverheadAllocationRule[]
   overheadAllocationResults OverheadAllocationResult[]
   projectFiles             ProjectFile[]
-  products                 Product[]
   purchases                Purchase[]
   inventoryTxns           InventoryTxn[]
-  productCategories        ProductCategory[]
   expenses                 Expense[]
   expenseCategories        ExpenseCategory[]
   stockItems               StockItem[]
   stockBalances            StockBalance[]
   stockMovements           StockMovement[]
+  projectStockSettings     ProjectStockSetting[]
+  projectInvestments       ProjectInvestment[]
+  projectLabors            ProjectLabor[]
+  credits                  Credit[]
 
   @@map("companies")
 }
@@ -153,6 +171,9 @@ model User {
   createdAllocationRules OverheadAllocationRule[] @relation("AllocationRuleCreator")
   expensesPaidBy Expense[]
   stockMovementsCreated StockMovement[] @relation("StockMovementCreator")
+  stockMovementsApproved StockMovement[] @relation("StockMovementApprover")
+  projectInvestmentsCreated ProjectInvestment[] @relation("ProjectInvestmentCreator")
+  projectLaborsCreated ProjectLabor[] @relation("ProjectLaborCreator")
 
   @@index([companyId])
   @@map("users")
@@ -194,7 +215,13 @@ model Project {
   inventoryTxns   InventoryTxn[]
   expenses        Expense[]
   mainProjectExpenses Expense[] @relation("MainProjectForExpense")
-  stockMovements  StockMovement[]
+  stockMovements  StockMovement[] @relation("ProjectStockMovements")
+  sourceStockMovements StockMovement[] @relation("SourceProjectStockMovements")
+  destinationStockMovements StockMovement[] @relation("DestinationProjectStockMovements")
+  stockSettings   ProjectStockSetting[]
+  investments     ProjectInvestment[]
+  labors          ProjectLabor[]
+  credits         Credit[]
 
   @@index([companyId])
   @@index([parentProjectId])
@@ -268,6 +295,8 @@ model Account {
   type      AccountType
   parentId  String?     @map("parent_id")
   isActive  Boolean     @default(true) @map("is_active")
+  isSystem  Boolean     @default(true) @map("is_system")
+  locked    Boolean     @default(true)
   createdAt DateTime    @default(now()) @map("created_at")
   updatedAt DateTime    @updatedAt @map("updated_at")
 
@@ -276,9 +305,9 @@ model Account {
   children     Account[]     @relation("AccountHierarchy")
   voucherLines VoucherLine[]
   purchasePayments Purchase[] @relation("PurchasePaymentAccount")
-  productInventoryAccounts Product[] @relation("ProductInventoryAccount")
   expenseDebitAccounts Expense[] @relation("ExpenseDebitAccount")
   expenseCreditAccounts Expense[] @relation("ExpenseCreditAccount")
+  creditPayments Credit[] @relation("CreditPaymentAccount")
 
   @@unique([companyId, code])
   @@unique([companyId, name])
@@ -348,6 +377,7 @@ model VoucherLine {
   debit          Decimal  @default(0) @db.Decimal(18, 2)
   credit         Decimal  @default(0) @db.Decimal(18, 2)
   projectId      String?  @map("project_id")
+  isCompanyLevel Boolean  @default(false) @map("is_company_level")
   vendorId       String?  @map("vendor_id")
   paymentMethodId String? @map("payment_method_id")
   createdAt      DateTime @default(now()) @map("created_at")
@@ -368,6 +398,7 @@ model VoucherLine {
   @@index([companyId, projectId])
   @@index([companyId, projectId, voucherId])
   @@index([companyId, vendorId])
+  @@index([companyId, isCompanyLevel])
   @@map("voucher_lines")
 }
 
@@ -466,55 +497,6 @@ model ProjectFile {
   @@map("project_files")
 }
 
-model ProductCategory {
-  id        String   @id @default(cuid())
-  companyId String   @map("company_id")
-  name      String
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  company  Company  @relation(fields: [companyId], references: [id])
-  products Product[]
-
-  @@unique([companyId, name])
-  @@index([companyId])
-  @@map("product_categories")
-}
-
-model Product {
-  id                    String   @id @default(cuid())
-  companyId             String   @map("company_id")
-  code                  String
-  name                  String
-  unit                  String
-  categoryId            String?  @map("category_id")
-  defaultPurchasePrice  Decimal  @default(0) @map("default_purchase_price") @db.Decimal(18, 2)
-  defaultSalePrice      Decimal  @default(0) @map("default_sale_price") @db.Decimal(18, 2)
-  imageUrl              String?  @map("image_url")
-  isInventory           Boolean  @default(true) @map("is_inventory")
-  openingStockQty       Decimal  @default(0) @map("opening_stock_qty") @db.Decimal(18, 3)
-  openingStockUnitCost  Decimal  @default(0) @map("opening_stock_unit_cost") @db.Decimal(18, 2)
-  inventoryAccountId    String?  @map("inventory_account_id")
-  isActive              Boolean  @default(true) @map("is_active")
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
-
-  company          Company         @relation(fields: [companyId], references: [id])
-  category         ProductCategory? @relation(fields: [categoryId], references: [id])
-  inventoryAccount Account?        @relation("ProductInventoryAccount", fields: [inventoryAccountId], references: [id])
-  purchaseLines    PurchaseLine[]
-  inventoryTxns    InventoryTxn[]
-
-  @@unique([companyId, code])
-  @@unique([companyId, name])
-  @@index([companyId])
-  @@index([companyId, categoryId])
-  @@index([inventoryAccountId])
-  @@map("products")
-}
-
-
 model Purchase {
   id              String        @id @default(cuid())
   companyId       String        @map("company_id")
@@ -558,7 +540,6 @@ model Purchase {
 model PurchaseLine {
   id             String           @id @default(cuid())
   purchaseId     String           @map("purchase_id")
-  productId      String?          @map("product_id")
   stockItemId    String?          @map("stock_item_id")
   lineType       PurchaseLineType  @default(OTHER)
   quantity       Decimal?         @db.Decimal(18, 3)
@@ -570,11 +551,9 @@ model PurchaseLine {
   updatedAt      DateTime         @updatedAt @map("updated_at")
 
   purchase   Purchase   @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  product    Product?   @relation(fields: [productId], references: [id])
   stockItem  StockItem? @relation(fields: [stockItemId], references: [id])
 
   @@index([purchaseId])
-  @@index([productId])
   @@index([stockItemId])
   @@index([purchaseId, lineType])
   @@map("purchase_lines")
@@ -598,7 +577,7 @@ model PurchaseAttachment {
 model InventoryTxn {
   id         String   @id @default(cuid())
   companyId String   @map("company_id")
-  productId String   @map("product_id")
+  stockItemId String?  @map("stock_item_id")
   purchaseId String? @map("purchase_id")
   projectId  String? @map("project_id")
   qtyIn      Decimal  @default(0) @map("qty_in") @db.Decimal(18, 3)
@@ -609,12 +588,12 @@ model InventoryTxn {
   createdAt  DateTime @default(now()) @map("created_at")
 
   company   Company   @relation(fields: [companyId], references: [id])
-  product   Product   @relation(fields: [productId], references: [id])
+  stockItem StockItem? @relation(fields: [stockItemId], references: [id])
   purchase  Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
   project   Project?  @relation(fields: [projectId], references: [id])
 
   @@index([companyId])
-  @@index([companyId, productId])
+  @@index([companyId, stockItemId])
   @@index([companyId, purchaseId])
   @@index([companyId, projectId])
   @@index([txnDate])
@@ -690,6 +669,8 @@ model StockItem {
   balances      StockBalance[]
   movements     StockMovement[]
   purchaseLines PurchaseLine[]
+  inventoryTxns InventoryTxn[]
+  projectStockSettings ProjectStockSetting[]
 
   @@unique([companyId, name])
   @@unique([companyId, sku])
@@ -718,27 +699,37 @@ model StockBalance {
 }
 
 model StockMovement {
-  id            String            @id @default(cuid())
-  companyId     String            @map("company_id")
-  stockItemId   String            @map("stock_item_id")
-  movementDate  DateTime          @default(now()) @map("movement_date")
-  type          StockMovementType
-  qty           Decimal           @db.Decimal(18, 3)
-  unitCost      Decimal?          @map("unit_cost") @db.Decimal(18, 2)
-  referenceType String?           @map("reference_type")
-  referenceId   String?           @map("reference_id")
-  notes         String?
-  projectId     String?           @map("project_id")
-  vendorId      String?           @map("vendor_id")
-  createdById   String            @map("created_by_id")
-  createdAt     DateTime          @default(now()) @map("created_at")
-  updatedAt     DateTime          @updatedAt @map("updated_at")
+  id                String            @id @default(cuid())
+  companyId         String            @map("company_id")
+  stockItemId       String            @map("stock_item_id")
+  movementDate      DateTime          @default(now()) @map("movement_date")
+  type              StockMovementType
+  movementKind      StockMovementKind? @map("movement_kind")
+  qty               Decimal           @db.Decimal(18, 3)
+  unitCost          Decimal?          @map("unit_cost") @db.Decimal(18, 2)
+  referenceType     String?           @map("reference_type")
+  referenceId       String?           @map("reference_id")
+  notes             String?
+  projectId         String?           @map("project_id")
+  sourceProjectId  String?           @map("source_project_id")
+  destinationProjectId String?        @map("destination_project_id")
+  vendorId          String?           @map("vendor_id")
+  createdById       String            @map("created_by_id")
+  approvedById      String?           @map("approved_by_id")
+  approvedAt        DateTime?         @map("approved_at")
+  reason            String?
+  meta              Json?
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
 
-  company   Company   @relation(fields: [companyId], references: [id])
-  stockItem StockItem @relation(fields: [stockItemId], references: [id])
-  project   Project?  @relation(fields: [projectId], references: [id])
-  vendor    Vendor?   @relation(fields: [vendorId], references: [id])
-  createdBy User      @relation("StockMovementCreator", fields: [createdById], references: [id])
+  company         Company   @relation(fields: [companyId], references: [id])
+  stockItem       StockItem @relation(fields: [stockItemId], references: [id])
+  project         Project?  @relation("ProjectStockMovements", fields: [projectId], references: [id])
+  sourceProject   Project?  @relation("SourceProjectStockMovements", fields: [sourceProjectId], references: [id])
+  destinationProject Project? @relation("DestinationProjectStockMovements", fields: [destinationProjectId], references: [id])
+  vendor          Vendor?   @relation(fields: [vendorId], references: [id])
+  createdBy       User      @relation("StockMovementCreator", fields: [createdById], references: [id])
+  approvedBy      User?     @relation("StockMovementApprover", fields: [approvedById], references: [id])
 
   @@index([companyId])
   @@index([companyId, stockItemId])
@@ -746,6 +737,112 @@ model StockMovement {
   @@index([companyId, movementDate])
   @@index([stockItemId])
   @@index([projectId])
+  @@index([sourceProjectId])
+  @@index([destinationProjectId])
   @@index([referenceType, referenceId])
+  @@index([companyId, projectId])
+  @@index([companyId, projectId, movementKind])
   @@map("stock_movements")
+}
+
+model ProjectInvestment {
+  id        String   @id @default(cuid())
+  companyId String   @map("company_id")
+  projectId String   @map("project_id")
+  date      DateTime
+  amount    Decimal  @db.Decimal(18, 2)
+  note      String?
+  createdByUserId String @map("created_by_user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company   Company @relation(fields: [companyId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id])
+  createdBy User    @relation("ProjectInvestmentCreator", fields: [createdByUserId], references: [id])
+
+  @@index([companyId])
+  @@index([companyId, projectId])
+  @@index([companyId, projectId, date])
+  @@index([projectId])
+  @@map("project_investments")
+}
+
+model ProjectLabor {
+  id        String   @id @default(cuid())
+  companyId String   @map("company_id")
+  projectId String   @map("project_id")
+  type      ProjectLaborType @default(DAY)
+  date      DateTime
+  amount    Decimal  @db.Decimal(18, 2)
+  note      String?
+  workerName   String? @map("worker_name")
+  employeeName String? @map("employee_name")
+  month        Int?    // 1-12, for MONTHLY
+  year         Int?
+  teamLeader   String?  @map("team_leader")   // DAY labor
+  paid         Decimal? @db.Decimal(18, 2)   // DAY labor
+  due          Decimal? @db.Decimal(18, 2)   // DAY labor: amount - paid (>= 0)
+  rating       Int?     // 1-5, DAY labor
+  createdByUserId String @map("created_by_user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company   Company @relation(fields: [companyId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id])
+  createdBy User    @relation("ProjectLaborCreator", fields: [createdByUserId], references: [id])
+
+  @@index([companyId])
+  @@index([companyId, projectId])
+  @@index([companyId, projectId, date])
+  @@index([companyId, projectId, type, date])
+  @@index([projectId])
+  @@map("project_labors")
+}
+
+model ProjectStockSetting {
+  id          String   @id @default(cuid())
+  companyId   String   @map("company_id")
+  projectId   String   @map("project_id")
+  stockItemId String   @map("stock_item_id")
+  minQty      Decimal  @map("min_qty") @db.Decimal(18, 3)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  company   Company   @relation(fields: [companyId], references: [id])
+  project   Project   @relation(fields: [projectId], references: [id])
+  stockItem StockItem @relation(fields: [stockItemId], references: [id])
+
+  @@unique([projectId, stockItemId])
+  @@index([companyId])
+  @@index([companyId, projectId])
+  @@index([projectId])
+  @@map("project_stock_settings")
+}
+
+model Credit {
+  id                String   @id @default(cuid())
+  companyId         String   @map("company_id")
+  projectId         String?  @map("project_id")
+  projectSnapshotName String @map("project_snapshot_name")
+  date              DateTime
+  purpose           String
+  paidBy            String
+  receivedBy        String
+  paymentMethod     String   @map("payment_method")
+  paymentRef        String?  @map("payment_ref")
+  paymentAccountId  String?  @map("payment_account_id")
+  amount            Decimal  @db.Decimal(18, 2)
+  note              String?  @default("Done")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  company         Company  @relation(fields: [companyId], references: [id])
+  project         Project? @relation(fields: [projectId], references: [id])
+  paymentAccount  Account? @relation("CreditPaymentAccount", fields: [paymentAccountId], references: [id])
+
+  @@index([companyId])
+  @@index([companyId, projectId])
+  @@index([companyId, date])
+  @@index([projectId])
+  @@map("credits")
 }

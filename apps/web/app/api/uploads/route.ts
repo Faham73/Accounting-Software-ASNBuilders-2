@@ -12,15 +12,15 @@ import { existsSync } from 'fs';
 
 /**
  * POST /api/uploads
- * Upload an image file (for products, etc.)
- * Requires WRITE permission on products or purchases
+ * Upload an image file (for purchases, etc.)
+ * Requires WRITE permission on purchases
  */
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth(request);
 
-    // Check if user can write to products or purchases
-    if (!can(auth.role, 'products', 'WRITE') && !can(auth.role, 'purchases', 'WRITE')) {
+    // Check if user can write to purchases
+    if (!can(auth.role, 'purchases', 'WRITE')) {
       throw new ForbiddenError('You do not have permission to upload files');
     }
 

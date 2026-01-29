@@ -38,9 +38,6 @@ export default async function EditPurchasePage({ params }: { params: { id: strin
       },
       lines: {
         include: {
-          product: {
-            select: { id: true, name: true, unit: true },
-          },
           stockItem: {
             select: { id: true, name: true, unit: true },
           },
@@ -78,7 +75,6 @@ export default async function EditPurchasePage({ params }: { params: { id: strin
     lines: purchase.lines.map((line) => ({
       ...line,
       lineType: (line.lineType || 'OTHER') as 'MATERIAL' | 'SERVICE' | 'OTHER',
-      productId: line.productId || null,
       stockItemId: line.stockItemId || null,
       quantity: line.quantity ? Number(line.quantity) : null,
       unit: line.unit || null,

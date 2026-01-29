@@ -14,6 +14,7 @@ export const VoucherLineCreateSchema = z.object({
   debit: z.number().nonnegative('Debit must be non-negative').default(0),
   credit: z.number().nonnegative('Credit must be non-negative').default(0),
   projectId: z.string().optional().nullable(),
+  isCompanyLevel: z.boolean().optional().default(false),
   vendorId: z.string().optional().nullable(),
   paymentMethodId: z.string().optional().nullable(),
 }).refine(
@@ -22,6 +23,15 @@ export const VoucherLineCreateSchema = z.object({
 ).refine(
   (data) => !(data.debit > 0 && data.credit > 0),
   { message: 'A line cannot have both debit and credit' }
+).refine(
+  (data) => {
+    // If isCompanyLevel is true, projectId must be null
+    if (data.isCompanyLevel && data.projectId) {
+      return false;
+    }
+    return true;
+  },
+  { message: 'Company-level credits cannot have a project assigned' }
 );
 
 /**

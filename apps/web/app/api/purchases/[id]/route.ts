@@ -42,9 +42,6 @@ export async function GET(
         },
         lines: {
           include: {
-            product: {
-              select: { id: true, name: true, unit: true },
-            },
             stockItem: {
               select: { id: true, name: true, unit: true },
             },
@@ -195,17 +192,17 @@ export async function PUT(
       }
     }
 
-    // Validate payment account if provided
+    // Validate payment account if provided (must be system account)
     if (validatedData.paymentAccountId) {
       const account = await prisma.account.findUnique({
         where: { id: validatedData.paymentAccountId },
       });
 
-      if (!account || account.companyId !== auth.companyId || !account.isActive) {
+      if (!account || account.companyId !== auth.companyId || !account.isActive || !account.isSystem) {
         return NextResponse.json(
           {
             ok: false,
-            error: 'Payment account not found, inactive, or does not belong to your company',
+            error: 'Payment account not found, inactive, or is not a system account',
           },
           { status: 400 }
         );
@@ -312,7 +309,6 @@ export async function PUT(
 
                 return {
                   lineType: line.lineType,
-                  productId: line.productId || null,
                   stockItemId: line.stockItemId || null,
                   quantity: line.quantity ? new Prisma.Decimal(line.quantity) : null,
                   unit: line.unit || null,
@@ -346,9 +342,6 @@ export async function PUT(
           },
           lines: {
             include: {
-              product: {
-                select: { id: true, name: true, unit: true },
-              },
               stockItem: {
                 select: { id: true, name: true, unit: true },
               },

@@ -28,32 +28,33 @@ export interface VoucherCreateData {
  * Get default accounts for purchase accounting
  */
 async function getDefaultAccounts(companyId: string) {
-  // Get Accounts Payable (code 2010)
+  // Get Accounts Payable (code 2010) - must be system account
   const apAccount = await prisma.account.findFirst({
     where: {
       companyId,
       code: '2010',
       isActive: true,
+      isSystem: true,
     },
   });
 
-  // Get default accounts by code
+  // Get default accounts by code - must be system accounts
   const [materialsAccount, laborAccount, overheadAccount, miscAccount] = await Promise.all([
     // 5010 - Direct Materials
     prisma.account.findFirst({
-      where: { companyId, code: '5010', isActive: true },
+      where: { companyId, code: '5010', isActive: true, isSystem: true },
     }),
     // 5020 - Direct Labor
     prisma.account.findFirst({
-      where: { companyId, code: '5020', isActive: true },
+      where: { companyId, code: '5020', isActive: true, isSystem: true },
     }),
     // 5030 - Site Overhead
     prisma.account.findFirst({
-      where: { companyId, code: '5030', isActive: true },
+      where: { companyId, code: '5030', isActive: true, isSystem: true },
     }),
     // 5090 - Misc Expense
     prisma.account.findFirst({
-      where: { companyId, code: '5090', isActive: true },
+      where: { companyId, code: '5090', isActive: true, isSystem: true },
     }),
   ]);
 
@@ -72,7 +73,6 @@ async function getDefaultAccounts(companyId: string) {
 async function getMaterialAccount(
   line: {
     lineType: string;
-    product?: { inventoryAccountId: string | null } | null;
     stockItemId?: string | null;
   },
   defaultMaterialsAccount: { id: string } | null,
@@ -83,20 +83,7 @@ async function getMaterialAccount(
     return { success: false, error: 'Not a MATERIAL line' };
   }
 
-  // Try product's inventory account first (legacy)
-  if (line.product?.inventoryAccountId) {
-    const invAccount = await prisma.account.findUnique({
-      where: { id: line.product.inventoryAccountId },
-    });
-    if (invAccount && invAccount.isActive && invAccount.companyId === companyId) {
-      const isLeaf = await isLeafAccount(invAccount.id);
-      if (isLeaf) {
-        return { success: true, accountId: invAccount.id };
-      }
-    }
-  }
-
-  // Fallback to default materials account
+  // Use default materials account
   if (defaultMaterialsAccount) {
     const isLeaf = await isLeafAccount(defaultMaterialsAccount.id);
     if (isLeaf) {
@@ -106,7 +93,7 @@ async function getMaterialAccount(
 
   return {
     success: false,
-    error: 'Inventory/Materials account not configured. Please set up account code 5010 (Direct Materials) or configure product inventory accounts.',
+    error: 'Inventory/Materials account not configured. Please set up account code 5010 (Direct Materials).',
   };
 }
 
@@ -175,11 +162,6 @@ export async function buildVoucherFromPurchase(
     include: {
       lines: {
         include: {
-          product: {
-            include: {
-              inventoryAccount: true,
-            },
-          },
           stockItem: true,
         },
       },
@@ -245,11 +227,9 @@ export async function buildVoucherFromPurchase(
       // Build description
       const itemName =
         purchaseLine.stockItem?.name ??
-        purchaseLine.product?.name ??
         'Unknown material';
       const unit =
         purchaseLine.stockItem?.unit ??
-        purchaseLine.product?.unit ??
         purchaseLine.unit ??
         '';
       const qty = Number(purchaseLine.quantity ?? 0);
@@ -524,44 +504,85 @@ export async function createInventoryTxnsForPostedPurchase(
         id: purchaseId,
         companyId,
       },
-      include: {
-        lines: {
-          include: {
-            product: true,
-          },
+    include: {
+      lines: {
+        include: {
+          stockItem: true,
+        },
+      },
+    },
+  });
+
+  if (!purchase) {
+    return { success: false, error: 'Purchase not found' };
+  }
+
+  if (purchase.status !== 'POSTED') {
+    return { success: false, error: 'Purchase must be POSTED to create stock movements' };
+  }
+
+  // Create stock movements for MATERIAL lines
+  for (const line of purchase.lines) {
+    // Only create movements for MATERIAL lines with stockItemId
+    if (line.lineType !== 'MATERIAL' || !line.stockItemId) {
+      continue;
+    }
+
+    // Create StockMovement
+    await tx.stockMovement.create({
+      data: {
+        companyId,
+        stockItemId: line.stockItemId,
+        movementDate: purchase.date,
+        type: 'IN',
+        qty: line.quantity || new Prisma.Decimal(0),
+        unitCost: line.unitRate || new Prisma.Decimal(0),
+        referenceType: 'PURCHASE',
+        referenceId: purchase.id,
+        projectId: purchase.projectId,
+        vendorId: purchase.supplierVendorId,
+        createdById: '', // Will be set by adjustStock or workflow
+        notes: `Purchase ${purchase.challanNo || purchase.id}`,
+      },
+    });
+
+    // Update or create StockBalance
+    const balance = await tx.stockBalance.findUnique({
+      where: {
+        companyId_stockItemId: {
+          companyId,
+          stockItemId: line.stockItemId,
         },
       },
     });
 
-    if (!purchase) {
-      return { success: false, error: 'Purchase not found' };
-    }
+    if (balance) {
+      // Update existing balance
+      const newQty = balance.onHandQty.plus(line.quantity || 0);
+      const newTotalCost = balance.avgCost.mul(balance.onHandQty).plus(
+        (line.unitRate || 0) * Number(line.quantity || 0)
+      );
+      const newAvgCost = newQty.gt(0) ? newTotalCost.div(newQty) : new Prisma.Decimal(0);
 
-    if (purchase.status !== 'POSTED') {
-      return { success: false, error: 'Purchase must be POSTED to create inventory transactions' };
-    }
-
-    // Create inventory transactions for each line
-    for (const line of purchase.lines) {
-      // Only create inventory txns for inventory products
-      if (!line.product.isInventory) {
-        continue;
-      }
-
-      await tx.inventoryTxn.create({
+      await tx.stockBalance.update({
+        where: { id: balance.id },
+        data: {
+          onHandQty: newQty,
+          avgCost: newAvgCost,
+        },
+      });
+    } else {
+      // Create new balance
+      await tx.stockBalance.create({
         data: {
           companyId,
-          productId: line.productId,
-          purchaseId: purchase.id,
-          projectId: purchase.projectId,
-          qtyIn: line.quantity,
-          qtyOut: new Prisma.Decimal(0),
-          unitCost: line.unitPrice,
-          totalCost: line.lineTotal,
-          txnDate: purchase.date,
+          stockItemId: line.stockItemId,
+          onHandQty: line.quantity || new Prisma.Decimal(0),
+          avgCost: line.unitRate || new Prisma.Decimal(0),
         },
       });
     }
+  }
 
     return { success: true };
   });
@@ -580,51 +601,76 @@ export async function createInventoryReversalForPurchase(
         id: purchaseId,
         companyId,
       },
-      include: {
-        lines: {
-          include: {
-            product: true,
-          },
+    include: {
+      lines: {
+        include: {
+          stockItem: true,
+        },
+      },
+    },
+  });
+
+  if (!purchase) {
+    return { success: false, error: 'Purchase not found' };
+  }
+
+  if (purchase.status !== 'REVERSED') {
+    return {
+      success: false,
+      error: 'Purchase must be REVERSED to create stock reversal movements',
+    };
+  }
+
+  // Find original stock movements
+  const originalMovements = await tx.stockMovement.findMany({
+    where: {
+      referenceType: 'PURCHASE',
+      referenceId: purchase.id,
+      companyId,
+        type: 'IN',
+    },
+  });
+
+  // Create reversal movements and update balances
+  for (const originalMovement of originalMovements) {
+    // Create reversal movement
+    await tx.stockMovement.create({
+      data: {
+        companyId,
+        stockItemId: originalMovement.stockItemId,
+        movementDate: new Date(),
+        type: 'ADJUST', // Or create a REVERSAL type if needed
+        qty: originalMovement.qty.neg(), // Negative quantity
+        unitCost: originalMovement.unitCost,
+        referenceType: 'PURCHASE',
+        referenceId: purchase.id,
+        projectId: originalMovement.projectId,
+        vendorId: originalMovement.vendorId,
+        createdById: originalMovement.createdById,
+        notes: `Reversal of purchase ${purchase.challanNo || purchase.id}`,
+      },
+    });
+
+    // Update StockBalance
+    const balance = await tx.stockBalance.findUnique({
+      where: {
+        companyId_stockItemId: {
+          companyId,
+          stockItemId: originalMovement.stockItemId,
         },
       },
     });
 
-    if (!purchase) {
-      return { success: false, error: 'Purchase not found' };
-    }
-
-    if (purchase.status !== 'REVERSED') {
-      return {
-        success: false,
-        error: 'Purchase must be REVERSED to create inventory reversal transactions',
-      };
-    }
-
-    // Find original inventory transactions
-    const originalTxns = await tx.inventoryTxn.findMany({
-      where: {
-        purchaseId: purchase.id,
-        companyId,
-        qtyIn: { gt: 0 },
-      },
-    });
-
-    // Create reversal transactions (qtyOut = original qtyIn)
-    for (const originalTxn of originalTxns) {
-      await tx.inventoryTxn.create({
+    if (balance) {
+      const newQty = balance.onHandQty.minus(originalMovement.qty);
+      await tx.stockBalance.update({
+        where: { id: balance.id },
         data: {
-          companyId,
-          productId: originalTxn.productId,
-          purchaseId: purchase.id,
-          projectId: originalTxn.projectId,
-          qtyIn: new Prisma.Decimal(0),
-          qtyOut: originalTxn.qtyIn, // Reverse the quantity
-          unitCost: originalTxn.unitCost,
-          totalCost: originalTxn.totalCost.neg(), // Negative cost
-          txnDate: new Date(), // Reversal date
+          onHandQty: newQty.gte(0) ? newQty : new Prisma.Decimal(0),
         },
       });
     }
+  }
 
     return { success: true };
   });

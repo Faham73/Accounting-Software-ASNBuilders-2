@@ -79,7 +79,8 @@ export default function ImportTransactionsClient() {
   const [isPosting, setIsPosting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [autoCreateAccounts, setAutoCreateAccounts] = useState(false);
+  // Accounts are system-managed - auto-creation is disabled
+  const [autoCreateAccounts] = useState(false); // DISABLED: Accounts are system-managed only
 
   const targetFields = [
     { value: '', label: 'Skip column' },
@@ -608,24 +609,10 @@ export default function ImportTransactionsClient() {
                     <li>... and {parseResult.unresolvedAccounts.length - 10} more</li>
                   )}
                 </ul>
-                <div className="mt-4 p-3 bg-white border border-yellow-300 rounded">
-                  <label className="flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={autoCreateAccounts}
-                      onChange={(e) => setAutoCreateAccounts(e.target.checked)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="ml-2 text-sm font-medium text-gray-900">
-                      Auto-create missing accounts during import
-                    </span>
-                  </label>
-                  {autoCreateAccounts && (
-                    <p className="mt-2 text-xs text-yellow-800">
-                      ⚠️ Missing accounts will be created with default type = EXPENSE unless code prefix rules match
-                      (1=ASSET, 2=LIABILITY, 3=EQUITY, 4=INCOME, 5/6=EXPENSE).
-                    </p>
-                  )}
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-300 rounded">
+                  <p className="text-sm text-blue-800">
+                    ℹ️ Accounts are system-managed. All accounts must exist before import. Use the system account registry to ensure required accounts are available.
+                  </p>
                 </div>
               </div>
             )}
@@ -731,7 +718,7 @@ export default function ImportTransactionsClient() {
                   : hasBlockingErrors
                     ? 'Fix Errors to Import'
                     : autoCreateAccounts && warnings.some((w) => w.message.includes('Account not found'))
-                    ? 'Import Vouchers (Will Create Accounts)'
+                    ? 'Import Vouchers (Accounts Must Exist)'
                     : 'Import Vouchers'}
               </button>
             </div>
@@ -778,23 +765,7 @@ export default function ImportTransactionsClient() {
                   Successfully imported {importResult.importedVoucherCount || importResult.imported} voucher(s) with{' '}
                   {importResult.importedLineCount || 0} line(s) as DRAFT.
                 </p>
-                {importResult.createdAccountsCount > 0 && (
-                  <div className="mt-3 p-3 bg-white border border-green-300 rounded">
-                    <p className="text-sm font-medium text-green-800 mb-2">
-                      Created {importResult.createdAccountsCount} new account(s):
-                    </p>
-                    <ul className="list-disc list-inside text-xs text-green-700 space-y-1">
-                      {importResult.createdAccounts?.slice(0, 10).map((acc: any, idx: number) => (
-                        <li key={idx}>
-                          {acc.code} - {acc.name}
-                        </li>
-                      ))}
-                      {importResult.createdAccountsCount > 10 && (
-                        <li>... and {importResult.createdAccountsCount - 10} more</li>
-                      )}
-                    </ul>
-                  </div>
-                )}
+                {/* Account creation is disabled - accounts are system-managed */}
                 <div className="mt-4">
                   {!importResult.postingResult && (
                     <button
