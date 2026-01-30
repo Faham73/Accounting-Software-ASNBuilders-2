@@ -208,19 +208,27 @@ export default function ProjectDashboardClient({
         </div>
 
         {/* Total Debit */}
-        <Link
-          href="/dashboard/debit"
-          className="bg-white rounded-lg shadow-md p-6 cursor-pointer hover:shadow-lg transition-shadow border-2 border-red-200 block"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-medium text-gray-500 mb-1">Total Debit</h3>
-              <p className="text-2xl font-bold text-red-600">{formatCurrency(totals.debit)}</p>
+        <div className="bg-white rounded-lg shadow-md p-6 border-2 border-red-200 flex flex-col gap-2">
+          <Link
+            href={`/dashboard/debit?projectId=${projectId}`}
+            className="flex-1 block hover:opacity-90"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 mb-1">Total Debit</h3>
+                <p className="text-2xl font-bold text-red-600">{formatCurrency(totals.debit)}</p>
+              </div>
+              <div className="text-red-500 text-3xl">📉</div>
             </div>
-            <div className="text-red-500 text-3xl">📉</div>
-          </div>
-          <p className="text-xs text-gray-400 mt-2">View all debits</p>
-        </Link>
+            <p className="text-xs text-gray-400 mt-2">View project debits</p>
+          </Link>
+          <Link
+            href={`/dashboard/projects/${projectId}/debit/new`}
+            className="w-full py-2 px-3 text-center text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-md hover:bg-red-100"
+          >
+            Add Debit
+          </Link>
+        </div>
 
         {/* Total Credit */}
         <Link

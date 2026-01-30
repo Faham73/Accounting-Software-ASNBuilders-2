@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 interface DebitLine {
   id: string;
@@ -77,7 +78,17 @@ interface EditFormData {
   debit: string;
 }
 
+const STATUS_OPTIONS = [
+  { value: 'ALL', label: 'All statuses' },
+  { value: 'DRAFT', label: 'Draft' },
+  { value: 'SUBMITTED', label: 'Submitted' },
+  { value: 'APPROVED', label: 'Approved' },
+  { value: 'POSTED', label: 'Posted' },
+] as const;
+
 export default function DebitClient() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [debitLines, setDebitLines] = useState<DebitLine[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -95,7 +106,25 @@ export default function DebitClient() {
     projectId: '',
     dateFrom: '',
     dateTo: '',
+    status: 'ALL' as string,
+    includeCompanyLevel: true,
   });
+
+  // Hydrate filters from URL on first load (so /dashboard/debit?projectId=xxx shows project filter)
+  const [hasHydrated, setHasHydrated] = useState(false);
+  useEffect(() => {
+    if (hasHydrated) return;
+    const projectId = searchParams.get('projectId') || '';
+    const includeCompanyLevel = searchParams.get('includeCompanyLevel');
+    const status = searchParams.get('status') || 'ALL';
+    setFilters((prev) => ({
+      ...prev,
+      projectId,
+      status: status || prev.status,
+      includeCompanyLevel: includeCompanyLevel === undefined ? prev.includeCompanyLevel : includeCompanyLevel === 'true',
+    }));
+    setHasHydrated(true);
+  }, [hasHydrated, searchParams]);
 
   // Edit/Delete state
   const [editingLine, setEditingLine] = useState<DebitLine | null>(null);
@@ -108,12 +137,7 @@ export default function DebitClient() {
     loadProjects();
     loadAccounts();
     loadPaymentMethods();
-    loadDebits();
   }, []);
-
-  useEffect(() => {
-    loadDebits();
-  }, [filters, pagination.page]);
 
   const loadProjects = async () => {
     try {
@@ -151,13 +175,17 @@ export default function DebitClient() {
     }
   };
 
-  const loadDebits = async () => {
+  const loadDebits = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (filters.projectId) params.set('projectId', filters.projectId);
       if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
       if (filters.dateTo) params.set('dateTo', filters.dateTo);
+      if (filters.status && filters.status !== 'ALL') params.set('status', filters.status);
+      if (!filters.projectId && filters.includeCompanyLevel === false) {
+        params.set('includeCompanyLevel', 'false');
+      }
       params.set('page', pagination.page.toString());
       params.set('pageSize', pagination.pageSize.toString());
 
@@ -173,11 +201,45 @@ export default function DebitClient() {
     } finally {
       setLoading(false);
     }
+  }, [filters.projectId, filters.dateFrom, filters.dateTo, filters.status, filters.includeCompanyLevel, pagination.page, pagination.pageSize]);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    loadDebits();
+  }, [hasHydrated, loadDebits]);
+
+  const updateUrl = useCallback(
+    (updates: Partial<typeof filters>) => {
+      const next = { ...filters, ...updates };
+      const params = new URLSearchParams();
+      if (next.projectId) params.set('projectId', next.projectId);
+      if (next.dateFrom) params.set('dateFrom', next.dateFrom);
+      if (next.dateTo) params.set('dateTo', next.dateTo);
+      if (next.status && next.status !== 'ALL') params.set('status', next.status);
+      if (!next.projectId && next.includeCompanyLevel === false) params.set('includeCompanyLevel', 'false');
+      router.replace(`/dashboard/debit?${params.toString()}`, { scroll: false });
+    },
+    [filters, router]
+  );
+
+  const handleFilterChange = (key: string, value: string | boolean) => {
+    const updates: Partial<typeof filters> = { [key]: value };
+    setFilters((prev) => ({ ...prev, ...updates }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
+    if (key === 'projectId' || key === 'status' || key === 'includeCompanyLevel') {
+      updateUrl({ ...filters, ...updates });
+    }
   };
 
-  const handleFilterChange = (key: string, value: string) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
+  const clearProjectFilter = () => {
+    setFilters((prev) => ({ ...prev, projectId: '' }));
     setPagination((prev) => ({ ...prev, page: 1 }));
+    const params = new URLSearchParams();
+    if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+    if (filters.dateTo) params.set('dateTo', filters.dateTo);
+    if (filters.status && filters.status !== 'ALL') params.set('status', filters.status);
+    if (filters.includeCompanyLevel === false) params.set('includeCompanyLevel', 'false');
+    router.replace(params.toString() ? `/dashboard/debit?${params.toString()}` : '/dashboard/debit', { scroll: false });
   };
 
   const formatCurrency = (amount: number) => {
@@ -287,7 +349,6 @@ export default function DebitClient() {
 
       const data = await response.json();
       if (data.ok) {
-        // Navigate to the new voucher edit page
         window.location.href = `/dashboard/vouchers/${data.data.voucherId}/edit`;
       } else {
         alert(data.error || 'Failed to create adjustment voucher');
@@ -297,6 +358,27 @@ export default function DebitClient() {
       console.error(err);
     }
   };
+
+  const handleWorkflow = async (voucherId: string, action: 'submit' | 'approve' | 'post') => {
+    const path = action === 'submit' ? 'submit' : action === 'approve' ? 'approve' : 'post';
+    try {
+      const response = await fetch(`/api/vouchers/${voucherId}/${path}`, { method: 'POST' });
+      const data = await response.json();
+      if (data.ok) {
+        loadDebits();
+      } else {
+        alert(data.error || `Failed to ${action}`);
+      }
+    } catch (err) {
+      alert(`Failed to ${action}`);
+      console.error(err);
+    }
+  };
+
+  const filteredProjectName = filters.projectId
+    ? projects.find((p) => p.id === filters.projectId)?.name ?? null
+    : null;
+  const showCreatedBanner = searchParams.get('created') === '1';
 
   // Sort by date then by voucher number
   const sortedDebitLines = [...debitLines].sort((a, b) => {
@@ -311,6 +393,38 @@ export default function DebitClient() {
 
   return (
     <div>
+      {showCreatedBanner && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-md text-green-800 text-sm flex items-center justify-between">
+          <span>Debit voucher created successfully.</span>
+          <button
+            type="button"
+            onClick={() => {
+              const params = new URLSearchParams(searchParams.toString());
+              params.delete('created');
+              router.replace(params.toString() ? `/dashboard/debit?${params.toString()}` : '/dashboard/debit', { scroll: false });
+            }}
+            className="text-green-600 hover:text-green-800"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {filteredProjectName && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-md text-amber-800 text-sm flex items-center justify-between">
+          <span>
+            <strong>Filtered:</strong> {filteredProjectName}
+          </span>
+          <button
+            type="button"
+            onClick={clearProjectFilter}
+            className="px-3 py-1 bg-amber-200 text-amber-900 rounded hover:bg-amber-300"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
+
       {/* Summary Card */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6 border-2 border-red-200">
         <div className="flex items-center justify-between">
@@ -341,6 +455,20 @@ export default function DebitClient() {
             </select>
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select
+              value={filters.status}
+              onChange={(e) => handleFilterChange('status', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            >
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
             <input
               type="date"
@@ -358,11 +486,31 @@ export default function DebitClient() {
               className="w-full px-3 py-2 border border-gray-300 rounded-md"
             />
           </div>
+          {!filters.projectId && (
+            <div className="md:col-span-2 flex items-center">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={filters.includeCompanyLevel}
+                  onChange={(e) => handleFilterChange('includeCompanyLevel', e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-700">Include company-level debits (no project)</span>
+              </label>
+            </div>
+          )}
           <div className="flex items-end">
             <button
               onClick={() => {
-                setFilters({ projectId: '', dateFrom: '', dateTo: '' });
+                setFilters({
+                  projectId: '',
+                  dateFrom: '',
+                  dateTo: '',
+                  status: 'ALL',
+                  includeCompanyLevel: true,
+                });
                 setPagination((prev) => ({ ...prev, page: 1 }));
+                router.replace('/dashboard/debit', { scroll: false });
               }}
               className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
             >
@@ -389,6 +537,9 @@ export default function DebitClient() {
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Date
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Project Name
@@ -427,12 +578,33 @@ export default function DebitClient() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {sortedDebitLines.map((line, index) => (
-                    <tr key={line.id} className="hover:bg-gray-50">
+                    <tr
+                      key={line.id}
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => router.push(`/dashboard/debit/${line.voucher.id}`)}
+                    >
                       <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                         {index + 1}
                       </td>
                       <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                         {formatDate(line.voucher.date)}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
+                            line.voucher.status === 'POSTED'
+                              ? 'bg-green-100 text-green-800'
+                              : line.voucher.status === 'DRAFT'
+                                ? 'bg-gray-100 text-gray-800'
+                                : line.voucher.status === 'SUBMITTED'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : line.voucher.status === 'APPROVED'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {line.voucher.status}
+                        </span>
                       </td>
                       <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                         {line.project?.name || 'Company'}
@@ -464,10 +636,20 @@ export default function DebitClient() {
                       <td className="px-3 py-4 text-sm text-gray-500">
                         {line.description || line.voucher.narration || '—'}
                       </td>
-                      <td className="px-3 py-4 whitespace-nowrap text-sm text-center">
-                        <div className="flex gap-2 justify-center">
-                          {line.voucher.status === 'DRAFT' ? (
+                      <td
+                        className="px-3 py-4 whitespace-nowrap text-sm text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex flex-wrap gap-2 justify-center items-center">
+                          {line.voucher.status === 'DRAFT' && (
                             <>
+                              <button
+                                onClick={() => handleWorkflow(line.voucher.id, 'submit')}
+                                className="text-amber-600 hover:text-amber-800 px-2 py-1 rounded hover:bg-amber-50 text-xs"
+                                title="Submit"
+                              >
+                                Submit
+                              </button>
                               <button
                                 onClick={() => handleEdit(line)}
                                 className="text-blue-600 hover:text-blue-900 px-2 py-1 rounded hover:bg-blue-50"
@@ -483,30 +665,33 @@ export default function DebitClient() {
                                 🗑️
                               </button>
                             </>
-                          ) : (
-                            <>
-                              <button
-                                disabled
-                                className="text-gray-400 px-2 py-1 rounded cursor-not-allowed"
-                                title="This entry is POSTED. Posted vouchers can't be edited. Create an adjustment instead."
-                              >
-                                ✏️
-                              </button>
-                              <button
-                                disabled
-                                className="text-gray-400 px-2 py-1 rounded cursor-not-allowed"
-                                title="This entry is POSTED. Posted vouchers can't be deleted. Create an adjustment instead."
-                              >
-                                🗑️
-                              </button>
-                              <button
-                                onClick={() => handleAdjust(line)}
-                                className="text-green-600 hover:text-green-900 px-2 py-1 rounded hover:bg-green-50"
-                                title="Create adjustment voucher"
-                              >
-                                🔄
-                              </button>
-                            </>
+                          )}
+                          {line.voucher.status === 'SUBMITTED' && (
+                            <button
+                              onClick={() => handleWorkflow(line.voucher.id, 'approve')}
+                              className="text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 text-xs"
+                              title="Approve"
+                            >
+                              Approve
+                            </button>
+                          )}
+                          {line.voucher.status === 'APPROVED' && (
+                            <button
+                              onClick={() => handleWorkflow(line.voucher.id, 'post')}
+                              className="text-green-600 hover:text-green-800 px-2 py-1 rounded hover:bg-green-50 text-xs"
+                              title="Post"
+                            >
+                              Post
+                            </button>
+                          )}
+                          {line.voucher.status === 'POSTED' && (
+                            <button
+                              onClick={() => handleAdjust(line)}
+                              className="text-green-600 hover:text-green-900 px-2 py-1 rounded hover:bg-green-50"
+                              title="Create adjustment voucher"
+                            >
+                              🔄
+                            </button>
                           )}
                         </div>
                       </td>

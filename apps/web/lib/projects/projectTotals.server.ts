@@ -17,6 +17,8 @@ export interface ProjectTotals {
   credit: number;
 }
 
+export type DebitVoucherStatusFilter = 'POSTED' | 'ALL';
+
 /**
  * Compute totals for a specific project ONLY (not company-wide)
  * All queries MUST filter by both companyId AND projectId to ensure project-scoped totals.
@@ -24,11 +26,16 @@ export interface ProjectTotals {
  * For purchases: If viewing a sub-project, only count purchases where projectId matches
  * the main project AND subProjectId matches the current sub-project.
  * If viewing a main project, count all purchases where projectId matches (regardless of subProjectId).
+ *
+ * debitVoucherStatus: when 'POSTED' (default for dashboards), only voucher lines from POSTED vouchers
+ * are included in debit total. Use 'ALL' to include DRAFT/SUBMITTED/APPROVED/POSTED.
  */
 export async function getProjectTotals(
   projectId: string,
-  companyId: string
+  companyId: string,
+  options?: { debitVoucherStatus?: DebitVoucherStatusFilter }
 ): Promise<ProjectTotals> {
+  const debitVoucherStatus = options?.debitVoucherStatus ?? 'POSTED';
   // Verify project belongs to company
   const project = await prisma.project.findFirst({
     where: {
@@ -127,10 +134,14 @@ export async function getProjectTotals(
       }),
 
       // Debit total (from voucher lines with this project) - PROJECT SCOPED
+      // Dashboard: only POSTED vouchers; optional ALL for other views
       prisma.voucherLine.aggregate({
         where: {
-          projectId, // PROJECT SCOPED: only debit lines for this project
+          projectId,
           companyId,
+          ...(debitVoucherStatus === 'POSTED' && {
+            voucher: { status: 'POSTED' },
+          }),
         },
         _sum: {
           debit: true,
@@ -178,6 +189,17 @@ export async function getProjectTotals(
   };
 }
 
+export type VoucherStatusForTotal = 'ALL' | 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'POSTED';
+
+export interface GetCompanyTotalsOptions {
+  /** For debit total: filter by voucher status. Default POSTED for dashboards. Use ALL to include all statuses. */
+  debitVoucherStatus?: DebitVoucherStatusFilter;
+  /** For debit total: when status filter is specific (e.g. DRAFT), total follows list filter. Overrides debitVoucherStatus when set. */
+  voucherStatus?: VoucherStatusForTotal;
+  /** When no projectId filter: if false, exclude company-level rows (projectId null) from debit total. Default true. */
+  includeCompanyLevel?: boolean;
+}
+
 /**
  * Compute company-wide totals (aggregating all projects)
  * This function is for NAVIGATION pages (investments, debit, credit) that show company totals.
@@ -189,7 +211,8 @@ export async function getProjectTotals(
  */
 export async function getCompanyTotals(
   companyId: string,
-  projectId?: string
+  projectId?: string,
+  options?: GetCompanyTotalsOptions
 ): Promise<{
   purchases: number;
   stocks: number;
@@ -202,6 +225,22 @@ export async function getCompanyTotals(
   const whereClause: any = { companyId };
   if (projectId) {
     whereClause.projectId = projectId;
+  }
+
+  const voucherStatusFilter = options?.voucherStatus ?? options?.debitVoucherStatus ?? 'POSTED';
+  const includeCompanyLevel = options?.includeCompanyLevel ?? true;
+
+  const debitWhere: any = {
+    companyId,
+    debit: { gt: 0 },
+  };
+  if (projectId) {
+    debitWhere.projectId = projectId;
+  } else if (!includeCompanyLevel) {
+    debitWhere.projectId = { not: null };
+  }
+  if (voucherStatusFilter !== 'ALL') {
+    debitWhere.voucher = { status: voucherStatusFilter };
   }
 
   const [
@@ -255,9 +294,9 @@ export async function getCompanyTotals(
       },
     }),
 
-    // Debit total
+    // Debit total (filter by voucher status and optional company-level)
     prisma.voucherLine.aggregate({
-      where: whereClause,
+      where: debitWhere,
       _sum: {
         debit: true,
       },

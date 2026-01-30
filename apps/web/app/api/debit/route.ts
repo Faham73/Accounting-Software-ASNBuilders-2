@@ -10,10 +10,17 @@ import { ZodError } from 'zod';
 import { z } from 'zod';
 import { getCompanyTotals } from '@/lib/projects/projectTotals.server';
 
+const VoucherStatusFilterSchema = z.enum(['ALL', 'DRAFT', 'SUBMITTED', 'APPROVED', 'POSTED']);
+
 const DebitListFiltersSchema = z.object({
   projectId: z.string().optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
+  status: VoucherStatusFilterSchema.optional().default('ALL'),
+  includeCompanyLevel: z
+    .string()
+    .optional()
+    .transform((v) => v == null || v === '' || v === 'true'),
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(25),
 });
@@ -31,6 +38,8 @@ export async function GET(request: NextRequest) {
       projectId: searchParams.get('projectId') || undefined,
       dateFrom: searchParams.get('dateFrom') || undefined,
       dateTo: searchParams.get('dateTo') || undefined,
+      status: searchParams.get('status') || undefined,
+      includeCompanyLevel: searchParams.get('includeCompanyLevel'),
       page: searchParams.get('page') || '1',
       pageSize: searchParams.get('pageSize') || '25',
     });
@@ -45,6 +54,13 @@ export async function GET(request: NextRequest) {
 
     if (filters.projectId) {
       where.projectId = filters.projectId;
+    } else if (filters.includeCompanyLevel === false) {
+      where.projectId = { not: null };
+    }
+
+    if (filters.status !== 'ALL') {
+      where.voucher = where.voucher || {};
+      where.voucher.status = filters.status;
     }
 
     const voucherDateFilter: any = {};
@@ -54,11 +70,9 @@ export async function GET(request: NextRequest) {
     if (filters.dateTo) {
       voucherDateFilter.lte = filters.dateTo;
     }
-
     if (Object.keys(voucherDateFilter).length > 0) {
-      where.voucher = {
-        date: voucherDateFilter,
-      };
+      where.voucher = where.voucher || {};
+      Object.assign(where.voucher, { date: voucherDateFilter });
     }
 
     const skip = (page - 1) * pageSize;
@@ -96,7 +110,10 @@ export async function GET(request: NextRequest) {
         },
       }),
       prisma.voucherLine.count({ where }),
-      getCompanyTotals(auth.companyId, filters.projectId),
+      getCompanyTotals(auth.companyId, filters.projectId, {
+        voucherStatus: filters.status as 'ALL' | 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'POSTED',
+        includeCompanyLevel: filters.projectId ? undefined : filters.includeCompanyLevel,
+      }),
     ]);
 
     return NextResponse.json({
