@@ -1,13 +1,24 @@
 import { z } from 'zod';
 
+const optionalString = z.preprocess(
+  (v) => {
+    // Convert null -> undefined
+    if (v === null) return undefined;
+    // Convert "" or "   " -> undefined
+    if (typeof v === 'string' && v.trim() === '') return undefined;
+    return v;
+  },
+  z.string().optional()
+);
+
 /**
  * Schema for creating a vendor
  */
 export const VendorCreateSchema = z.object({
   name: z.string().min(1, 'Vendor name is required'),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  notes: z.string().optional(),
+  phone: optionalString,
+  address: optionalString,
+  notes: optionalString,
   isActive: z.boolean().optional().default(true),
 });
 

@@ -1,8 +1,16 @@
 'use client';
 
 import { useState, FormEvent, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+
+function Portal({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return createPortal(children, document.body);
+}
 
 type PurchaseLineType = 'MATERIAL' | 'SERVICE' | 'OTHER';
 
@@ -101,6 +109,16 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
     address: '',
     notes: '',
   });
+
+  // Close Add Vendor modal on Escape
+  useEffect(() => {
+    if (!showAddVendorModal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowAddVendorModal(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showAddVendorModal]);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [subProjects, setSubProjects] = useState<Project[]>([]);
@@ -547,7 +565,9 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
             <label className="block text-sm font-medium text-gray-700">Vendor *</label>
             <button
               type="button"
-              onClick={() => setShowAddVendorModal(true)}
+              onClick={() => {
+                setShowAddVendorModal(true);
+              }}
               className="text-xs text-blue-600 hover:text-blue-800 font-medium"
             >
               + Add Vendor
@@ -816,35 +836,58 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
         </button>
       </div>
 
-      {/* Add Vendor Modal */}
+      {/* Add Vendor Modal - rendered via portal to avoid overflow/z-index issues */}
       {showAddVendorModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-bold mb-4">Add New Vendor</h2>
+        <Portal>
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]"
+            onClick={() => setShowAddVendorModal(false)}
+            role="presentation"
+          >
+            <div
+              className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="add-vendor-title"
+            >
+            <h2 id="add-vendor-title" className="text-xl font-bold mb-4">Add New Vendor</h2>
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
                 setIsCreatingVendor(true);
                 try {
+                  const normalize = (v: unknown) => {
+                    if (v === null || v === undefined) return undefined;
+                    if (typeof v === 'string') {
+                      const t = v.trim();
+                      return t === '' ? undefined : t;
+                    }
+                    return undefined;
+                  };
+
+                  const payload = {
+                    name: (newVendorData.name ?? '').trim(),
+                    phone: normalize(newVendorData.phone),
+                    address: normalize(newVendorData.address),
+                    notes: normalize(newVendorData.notes),
+                    isActive: true,
+                  };
+
                   const response = await fetch('/api/vendors', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
-                    body: JSON.stringify({
-                      name: newVendorData.name,
-                      phone: newVendorData.phone || undefined,
-                      address: newVendorData.address || undefined,
-                      notes: newVendorData.notes || undefined,
-                      isActive: true,
-                    }),
+                    body: JSON.stringify(payload),
                   });
 
                   const data = await response.json();
                   if (data.ok) {
                     // Add new vendor to list and select it
                     const newVendor = data.data;
-                    setVendors([...vendors, newVendor]);
+                    setVendors((prev) => [...prev, newVendor]);
                     setFormData((prev) => ({ ...prev, supplierVendorId: newVendor.id }));
+                    setError(null); // Clear any prior "Vendor is required" (or other) error
                     setShowAddVendorModal(false);
                     setNewVendorData({ name: '', phone: '', address: '', notes: '' });
                   } else {
@@ -929,8 +972,9 @@ export default function PurchaseForm({ purchase }: PurchaseFormProps) {
                 </button>
               </div>
             </form>
+            </div>
           </div>
-        </div>
+        </Portal>
       )}
     </form>
   );

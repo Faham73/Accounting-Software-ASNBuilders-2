@@ -177,7 +177,16 @@ export default function ProjectsList({ initialProjects, canWrite }: ProjectsList
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {projects.map((project, index) => (
-                <tr key={project.id}>
+                <tr
+                  key={project.id}
+                  onClick={() => router.push(`/dashboard/projects/${project.id}`)}
+                  className="cursor-pointer hover:bg-muted/50"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') router.push(`/dashboard/projects/${project.id}`);
+                  }}
+                >
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                     {index + 1}
                   </td>
@@ -221,7 +230,7 @@ export default function ProjectsList({ initialProjects, canWrite }: ProjectsList
                     {project.reference || <span className="text-gray-400">-</span>}
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap text-sm">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
                       <span className="text-gray-900">
                         {project.filesCount ?? 0} {project.filesCount === 1 ? 'file' : 'files'}
                       </span>
@@ -244,36 +253,26 @@ export default function ProjectsList({ initialProjects, canWrite }: ProjectsList
                       {project.status}
                     </span>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm font-medium space-x-2" onClick={(e) => e.stopPropagation()}>
                     {canWrite ? (
                       <>
                         <Link
-                          href={`/dashboard/projects/${project.id}`}
-                          className="text-blue-600 hover:text-blue-900"
-                        >
-                          View
-                        </Link>
-                        <Link
-                          href={`/dashboard/projects/${project.id}`}
+                          href={`/dashboard/projects/${project.id}/edit`}
                           className="text-indigo-600 hover:text-indigo-900"
                         >
                           Edit
                         </Link>
                         <button
-                          onClick={() => handleArchive(project.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleArchive(project.id);
+                          }}
                           className="text-red-600 hover:text-red-900"
                         >
                           Delete
                         </button>
                       </>
-                    ) : (
-                      <Link
-                        href={`/dashboard/projects/${project.id}`}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        View
-                      </Link>
-                    )}
+                    ) : null}
                   </td>
                 </tr>
               ))}
