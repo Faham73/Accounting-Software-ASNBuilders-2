@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, VoucherType, VoucherStatus, AccountType } from '@prisma/client';
+import { PrismaClient, UserRole, VoucherType, VoucherStatus, AccountType, ProjectStatus } from '@prisma/client';
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -13,4 +13,4 @@ export const prisma =
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 // Export enums for use across the application
-export { UserRole, VoucherType, VoucherStatus, AccountType };
+export { UserRole, VoucherType, VoucherStatus, AccountType, ProjectStatus };

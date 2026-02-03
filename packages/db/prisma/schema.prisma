@@ -20,7 +20,9 @@ enum UserRole {
 
 enum ProjectStatus {
   DRAFT
+  PLANNING
   RUNNING
+  ON_HOLD
   COMPLETED
   CLOSED
 }
@@ -151,6 +153,7 @@ model Company {
   projectInvestments       ProjectInvestment[]
   projectLabors            ProjectLabor[]
   credits                  Credit[]
+  projectDocuments         ProjectDocument[]
 
   @@map("companies")
 }
@@ -205,6 +208,10 @@ model Project {
   reference       String?       @map("reference")
   isMain          Boolean       @default(false) @map("is_main")
   parentProjectId String?       @map("parent_project_id")
+  totalFloors     Int?          @map("total_floors")
+  totalUnits      Int?          @map("total_units")
+  budgetTotal     Decimal       @default(0) @map("budget_total") @db.Decimal(15, 2)
+  progressPercent Int          @default(0) @map("progress_percent")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
@@ -227,6 +234,7 @@ model Project {
   investments     ProjectInvestment[]
   labors          ProjectLabor[]
   credits         Credit[]
+  documents       ProjectDocument[]
 
   @@index([companyId])
   @@index([parentProjectId])
@@ -506,6 +514,23 @@ model ProjectFile {
   @@index([projectId])
   @@index([companyId, projectId])
   @@map("project_files")
+}
+
+model ProjectDocument {
+  id         String   @id @default(cuid())
+  companyId  String   @map("company_id")
+  projectId  String   @map("project_id")
+  title      String
+  fileUrl    String   @map("file_url")
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([projectId])
+  @@index([companyId, projectId])
+  @@map("project_documents")
 }
 
 model Purchase {

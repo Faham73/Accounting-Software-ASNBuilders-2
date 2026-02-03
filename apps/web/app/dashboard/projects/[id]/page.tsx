@@ -2,7 +2,16 @@ import { redirect } from 'next/navigation';
 import { requirePermissionServer } from '@/lib/rbac';
 import { prisma } from '@accounting/db';
 import DashboardLayout from '../../components/DashboardLayout';
+import ProjectHeaderCard from './components/ProjectHeaderCard';
+import ProjectQuickActions from './components/ProjectQuickActions';
+import ProjectFinancialSnapshot from './components/ProjectFinancialSnapshot';
 import ProjectDashboardClient from './components/ProjectDashboardClient';
+import ProjectPurchasesPayables from './components/ProjectPurchasesPayables';
+import ProjectStockStatus from './components/ProjectStockStatus';
+import ProjectLaborSummary from './components/ProjectLaborSummary';
+import ProjectProgressVsCost from './components/ProjectProgressVsCost';
+import ProjectRecentActivity from './components/ProjectRecentActivity';
+import ProjectDocuments from './components/ProjectDocuments';
 import ProjectStatementActions from './components/ProjectStatementActions';
 import Link from 'next/link';
 
@@ -29,6 +38,12 @@ export default async function ProjectViewPage({
       name: true,
       clientName: true,
       status: true,
+      siteLocation: true,
+      startDate: true,
+      expectedEndDate: true,
+      projectManager: true,
+      totalFloors: true,
+      totalUnits: true,
     },
   });
 
@@ -63,7 +78,26 @@ export default async function ProjectViewPage({
         </div>
       }
     >
+      <ProjectHeaderCard
+        name={project.name}
+        location={project.siteLocation}
+        startDate={project.startDate}
+        expectedEndDate={project.expectedEndDate}
+        status={project.status}
+        managerName={project.projectManager}
+        clientName={project.clientName}
+        totalFloors={project.totalFloors}
+        totalUnits={project.totalUnits}
+      />
+      <ProjectQuickActions projectId={params.id} />
+      <ProjectFinancialSnapshot projectId={params.id} />
       <ProjectDashboardClient projectId={params.id} projectName={project.name} />
+      <ProjectPurchasesPayables projectId={params.id} />
+      <ProjectStockStatus projectId={params.id} />
+      <ProjectLaborSummary projectId={params.id} />
+      <ProjectProgressVsCost projectId={params.id} />
+      <ProjectRecentActivity projectId={params.id} />
+      <ProjectDocuments projectId={params.id} />
     </DashboardLayout>
   );
 }

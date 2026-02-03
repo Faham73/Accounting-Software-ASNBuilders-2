@@ -27,6 +27,7 @@ export interface ProjectStockItemBreakdown {
   avgRate: number;
   totalValue: number;
   minQty: number | null;
+  reorderLevel: number | null;
   isLowStock: boolean;
 }
 
@@ -50,11 +51,12 @@ interface StockMovementWithRelations {
     id: string;
     name: string;
     unit: string;
+    reorderLevel: Prisma.Decimal | null;
   };
 }
 
 interface ItemState {
-  stockItem: { id: string; name: string; unit: string };
+  stockItem: { id: string; name: string; unit: string; reorderLevel: Prisma.Decimal | null };
   onHandQty: number;
   avgCost: number;
   // Reporting fields
@@ -318,6 +320,7 @@ export async function getProjectStockOverview(
           id: true,
           name: true,
           unit: true,
+          reorderLevel: true,
         },
       },
     },
@@ -348,7 +351,9 @@ export async function getProjectStockOverview(
     const remainingQty = item.onHandQty;
     const totalValue = remainingQty * item.avgCost;
     const minQty = settingsMap.get(item.stockItem.id) ?? null;
-    const isLowStock = minQty !== null && remainingQty <= minQty;
+    const reorderLevel = item.stockItem.reorderLevel != null ? Number(item.stockItem.reorderLevel) : null;
+    const threshold = minQty ?? reorderLevel ?? 0;
+    const isLowStock = remainingQty < threshold;
 
     return {
       stockItemId: item.stockItem.id,
@@ -366,6 +371,7 @@ export async function getProjectStockOverview(
       avgRate: item.avgCost,
       totalValue,
       minQty,
+      reorderLevel,
       isLowStock,
     };
   });

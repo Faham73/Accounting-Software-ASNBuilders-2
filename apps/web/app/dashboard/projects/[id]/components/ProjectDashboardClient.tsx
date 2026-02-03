@@ -124,8 +124,10 @@ export default function ProjectDashboardClient({
 
   return (
     <div>
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 mb-1">Project Financial Totals</h2>
+        <p className="text-sm text-gray-500 mb-6">Click any card to view or add entries</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* Total Purchases */}
         <div
           className="bg-white rounded-lg shadow-md p-6 cursor-pointer hover:shadow-lg transition-shadow border-2 border-blue-200"
@@ -245,6 +247,7 @@ export default function ProjectDashboardClient({
           <p className="text-xs text-gray-400 mt-2">View project credits</p>
         </Link>
       </div>
+      </section>
 
       {/* Investment Modal */}
       {showInvestmentModal && (
