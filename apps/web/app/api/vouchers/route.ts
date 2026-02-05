@@ -212,25 +212,32 @@ export async function POST(request: NextRequest) {
           expenseType: validatedData.expenseType || null,
           createdByUserId: auth.userId,
           lines: {
-            create: validatedData.lines.map((line) => ({
-              companyId: auth.companyId,
-              accountId: line.accountId,
-              description: line.description || null,
-              debit: line.debit,
-              credit: line.credit,
-              projectId: validatedData.expenseType === 'OFFICE_EXPENSE' 
+            create: validatedData.lines.map((line) => {
+              // Determine projectId: use line.projectId if set, otherwise fall back to voucher.projectId
+              // Exception: if isCompanyLevel is true or expenseType is OFFICE_EXPENSE, projectId should be null
+              const voucherProjectId = validatedData.expenseType === 'OFFICE_EXPENSE' ? null : (validatedData.projectId || null);
+              const lineProjectId = validatedData.expenseType === 'OFFICE_EXPENSE' 
                 ? null 
-                : (line.isCompanyLevel ? null : (line.projectId || null)),
-              isCompanyLevel: validatedData.expenseType === 'OFFICE_EXPENSE' ? false : (line.isCompanyLevel || false),
-              vendorId: line.vendorId || null,
-              paymentMethodId: line.paymentMethodId || null,
-              // PDF fields
-              workDetails: line.workDetails || null,
-              paidBy: line.paidBy || null,
-              receivedBy: line.receivedBy || null,
-              fileRef: line.fileRef || null,
-              voucherRef: line.voucherRef || null,
-            })),
+                : (line.isCompanyLevel ? null : (line.projectId || voucherProjectId));
+              
+              return {
+                companyId: auth.companyId,
+                accountId: line.accountId,
+                description: line.description || null,
+                debit: line.debit,
+                credit: line.credit,
+                projectId: lineProjectId,
+                isCompanyLevel: validatedData.expenseType === 'OFFICE_EXPENSE' ? false : (line.isCompanyLevel || false),
+                vendorId: line.vendorId || null,
+                paymentMethodId: line.paymentMethodId || null,
+                // PDF fields
+                workDetails: line.workDetails || null,
+                paidBy: line.paidBy || null,
+                receivedBy: line.receivedBy || null,
+                fileRef: line.fileRef || null,
+                voucherRef: line.voucherRef || null,
+              };
+            }),
           },
         },
         include: {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 interface DebitLine {
   id: string;
@@ -115,11 +116,15 @@ export default function DebitClient() {
   useEffect(() => {
     if (hasHydrated) return;
     const projectId = searchParams.get('projectId') || '';
+    const dateFrom = searchParams.get('dateFrom') || '';
+    const dateTo = searchParams.get('dateTo') || '';
     const includeCompanyLevel = searchParams.get('includeCompanyLevel');
     const status = searchParams.get('status') || 'ALL';
     setFilters((prev) => ({
       ...prev,
       projectId,
+      dateFrom,
+      dateTo,
       status: status || prev.status,
       includeCompanyLevel: includeCompanyLevel === undefined ? prev.includeCompanyLevel : includeCompanyLevel === 'true',
     }));
@@ -226,9 +231,8 @@ export default function DebitClient() {
     const updates: Partial<typeof filters> = { [key]: value };
     setFilters((prev) => ({ ...prev, ...updates }));
     setPagination((prev) => ({ ...prev, page: 1 }));
-    if (key === 'projectId' || key === 'status' || key === 'includeCompanyLevel') {
-      updateUrl({ ...filters, ...updates });
-    }
+    // Update URL for all filter changes to keep URL in sync
+    updateUrl({ ...filters, ...updates });
   };
 
   const clearProjectFilter = () => {
@@ -379,6 +383,7 @@ export default function DebitClient() {
     ? projects.find((p) => p.id === filters.projectId)?.name ?? null
     : null;
   const showCreatedBanner = searchParams.get('created') === '1';
+  const projectId = filters.projectId;
 
   // Sort by date then by voucher number
   const sortedDebitLines = [...debitLines].sort((a, b) => {
@@ -391,8 +396,25 @@ export default function DebitClient() {
     return a.voucher.voucherNo.localeCompare(b.voucher.voucherNo);
   });
 
+  // Build "Add Debit" link
+  const addDebitLink = projectId
+    ? `/dashboard/projects/${projectId}/debit/new?returnTo=${encodeURIComponent(`/dashboard/debit?projectId=${projectId}`)}`
+    : '/dashboard/vouchers/new';
+
   return (
     <div>
+      {/* Add Debit Button - shown above filters when in project context */}
+      {projectId && (
+        <div className="mb-4 flex justify-end">
+          <Link
+            href={addDebitLink}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium inline-flex items-center gap-2"
+          >
+            <span>+</span>
+            <span>Add Debit</span>
+          </Link>
+        </div>
+      )}
       {showCreatedBanner && (
         <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-md text-green-800 text-sm flex items-center justify-between">
           <span>Debit voucher created successfully.</span>

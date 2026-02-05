@@ -47,6 +47,7 @@ export default function ProjectForm({ project, onDuplicate }: ProjectFormProps) 
     startDate: toDateInputValue(project?.startDate),
     expectedEndDate: toDateInputValue(project?.expectedEndDate),
     contractValue: project?.contractValue?.toString() || '',
+    budgetTotal: project?.budgetTotal?.toString() || '',
     status: project?.status || 'DRAFT',
     assignedManager: project?.assignedManager || '',
     isActive: project?.isActive ?? true,
@@ -91,6 +92,7 @@ export default function ProjectForm({ project, onDuplicate }: ProjectFormProps) 
         startDate: formData.startDate || null,
         expectedEndDate: formData.expectedEndDate || null,
         contractValue: formData.contractValue ? parseFloat(formData.contractValue) : null,
+        budgetTotal: formData.budgetTotal ? parseFloat(formData.budgetTotal) : null,
         status: formData.status,
         assignedManager: formData.assignedManager || null,
         isActive: formData.isActive,
@@ -261,6 +263,21 @@ export default function ProjectForm({ project, onDuplicate }: ProjectFormProps) 
             min="0"
             value={formData.contractValue}
             onChange={(e) => setFormData({ ...formData, contractValue: e.target.value })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="budgetTotal" className="block text-sm font-medium text-gray-700">
+            Project Budget (BDT)
+          </label>
+          <input
+            type="number"
+            id="budgetTotal"
+            step="0.01"
+            min="0"
+            value={formData.budgetTotal}
+            onChange={(e) => setFormData({ ...formData, budgetTotal: e.target.value })}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
           />
         </div>

@@ -94,6 +94,7 @@ export async function GET(request: NextRequest) {
         isMain: project.isMain,
         parentProjectId: project.parentProjectId,
         parentProject: project.parentProject,
+        budgetTotal: project.budgetTotal,
         // Computed fields
         entriesCount,
         filesCount,
@@ -172,6 +173,7 @@ export async function POST(request: NextRequest) {
         reference: validatedData.reference,
         isMain: validatedData.isMain ?? false,
         parentProjectId: validatedData.parentProjectId,
+        budgetTotal: validatedData.budgetTotal ?? null,
       },
       select: {
         id: true,
@@ -192,6 +194,7 @@ export async function POST(request: NextRequest) {
         reference: true,
         isMain: true,
         parentProjectId: true,
+        budgetTotal: true,
         createdAt: true,
         updatedAt: true,
       },

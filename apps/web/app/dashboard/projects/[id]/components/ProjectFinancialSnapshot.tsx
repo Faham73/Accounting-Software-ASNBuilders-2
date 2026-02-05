@@ -11,9 +11,9 @@ interface ProjectFinancialSnapshotBreakdown {
 }
 
 interface ProjectFinancialSnapshotData {
-  budgetTotal: number;
+  budgetTotal: number | null;
   spent: number;
-  remaining: number;
+  remaining: number | null;
   overBudget: boolean;
   breakdown: ProjectFinancialSnapshotBreakdown;
 }
@@ -93,7 +93,9 @@ export default function ProjectFinancialSnapshot({ projectId }: ProjectFinancial
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
           <p className="text-sm font-medium text-slate-600 mb-1">Budget</p>
-          <p className="text-xl font-bold text-slate-800">{formatCurrency(budgetTotal)}</p>
+          <p className="text-xl font-bold text-slate-800">
+            {budgetTotal !== null ? formatCurrency(budgetTotal) : 'Not set'}
+          </p>
         </div>
         <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
           <p className="text-sm font-medium text-amber-700 mb-1">Spent</p>
@@ -101,16 +103,25 @@ export default function ProjectFinancialSnapshot({ projectId }: ProjectFinancial
         </div>
         <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
           <p className="text-sm font-medium text-blue-700 mb-1">Remaining</p>
-          <p className="text-xl font-bold text-blue-800">{formatCurrency(remaining)}</p>
+          {budgetTotal !== null ? (
+            <p className="text-xl font-bold text-blue-800">{formatCurrency(remaining ?? 0)}</p>
+          ) : (
+            <>
+              <p className="text-xl font-bold text-gray-500">—</p>
+              <p className="text-xs text-gray-500 mt-1">Set a budget to track remaining</p>
+            </>
+          )}
         </div>
         <div className="rounded-lg p-4 border flex items-center justify-center">
-          <span
-            className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
-              overBudget ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-            }`}
-          >
-            {overBudget ? 'Over budget' : 'On track'}
-          </span>
+          {budgetTotal !== null && (
+            <span
+              className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
+                overBudget ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+              }`}
+            >
+              {overBudget ? 'Over budget' : 'On track'}
+            </span>
+          )}
         </div>
       </div>
 

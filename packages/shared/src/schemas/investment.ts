@@ -8,6 +8,10 @@ export const ProjectInvestmentCreateSchema = z.object({
   date: z.coerce.date(),
   amount: z.number().positive('Amount must be positive'),
   note: z.string().optional().nullable(),
+  // NEW
+  investorName: z.string().min(1, 'Investor is required'),
+  receivedBy: z.string().min(1, 'Received By is required'),
+  paymentMethod: z.enum(['CASH', 'BANK']),
 });
 
 /**
@@ -17,6 +21,12 @@ export const ProjectInvestmentUpdateSchema = z.object({
   date: z.coerce.date().optional(),
   amount: z.number().positive('Amount must be positive').optional(),
   note: z.string().optional().nullable(),
+  investorName: z.string().min(1, 'Investor name is required').optional(),
+  investorId: z.string().optional().nullable(),
+  receivedBy: z.string().min(1, 'Received by is required').optional(),
+  paymentMethod: z.enum(['CASH', 'BANK']).optional(),
+  cashAccountId: z.string().optional().nullable(),
+  bankAccountId: z.string().optional().nullable(),
 });
 
 /**
@@ -26,6 +36,7 @@ export const ProjectInvestmentListFiltersSchema = z.object({
   projectId: z.string().optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
+  paymentMethod: z.enum(['CASH', 'BANK']).optional(),
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(25),
 });

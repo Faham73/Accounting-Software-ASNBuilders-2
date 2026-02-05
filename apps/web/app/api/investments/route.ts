@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
       projectId: searchParams.get('projectId') || undefined,
       dateFrom: searchParams.get('dateFrom') || undefined,
       dateTo: searchParams.get('dateTo') || undefined,
+      paymentMethod: searchParams.get('paymentMethod') || undefined,
       page: searchParams.get('page') || '1',
       pageSize: searchParams.get('pageSize') || '25',
     });
@@ -36,6 +37,10 @@ export async function GET(request: NextRequest) {
 
     if (filters.projectId) {
       where.projectId = filters.projectId;
+    }
+
+    if (filters.paymentMethod) {
+      where.paymentMethod = filters.paymentMethod;
     }
 
     if (filters.dateFrom || filters.dateTo) {

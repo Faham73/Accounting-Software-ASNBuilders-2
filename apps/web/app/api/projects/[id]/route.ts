@@ -44,6 +44,7 @@ export async function GET(
         reference: true,
         isMain: true,
         parentProjectId: true,
+        budgetTotal: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -167,6 +168,8 @@ export async function PATCH(
     if (validatedData.isMain !== undefined) updateData.isMain = validatedData.isMain;
     if (validatedData.parentProjectId !== undefined)
       updateData.parentProjectId = validatedData.parentProjectId;
+    if ('budgetTotal' in validatedData)
+      updateData.budgetTotal = validatedData.budgetTotal ?? null;
 
     const updatedProject = await prisma.project.update({
       where: { id: params.id },
@@ -190,6 +193,7 @@ export async function PATCH(
         reference: true,
         isMain: true,
         parentProjectId: true,
+        budgetTotal: true,
         createdAt: true,
         updatedAt: true,
       },

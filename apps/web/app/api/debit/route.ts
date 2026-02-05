@@ -12,10 +12,19 @@ import { getCompanyTotals } from '@/lib/projects/projectTotals.server';
 
 const VoucherStatusFilterSchema = z.enum(['ALL', 'DRAFT', 'SUBMITTED', 'APPROVED', 'POSTED']);
 
+// Helper to safely coerce date, treating empty strings as undefined
+const safeDateCoerce = z.preprocess(
+  (val) => {
+    if (!val || (typeof val === 'string' && val.trim() === '')) return undefined;
+    return val;
+  },
+  z.coerce.date().optional()
+);
+
 const DebitListFiltersSchema = z.object({
   projectId: z.string().optional(),
-  dateFrom: z.coerce.date().optional(),
-  dateTo: z.coerce.date().optional(),
+  dateFrom: safeDateCoerce,
+  dateTo: safeDateCoerce,
   status: VoucherStatusFilterSchema.optional().default('ALL'),
   includeCompanyLevel: z
     .string()
@@ -34,15 +43,44 @@ export async function GET(request: NextRequest) {
     const auth = await requirePermission(request, 'vouchers', 'READ');
 
     const { searchParams } = new URL(request.url);
-    const filters = DebitListFiltersSchema.parse({
-      projectId: searchParams.get('projectId') || undefined,
-      dateFrom: searchParams.get('dateFrom') || undefined,
-      dateTo: searchParams.get('dateTo') || undefined,
-      status: searchParams.get('status') || undefined,
-      includeCompanyLevel: searchParams.get('includeCompanyLevel'),
-      page: searchParams.get('page') || '1',
-      pageSize: searchParams.get('pageSize') || '25',
-    });
+    
+    // Build raw params object from URLSearchParams
+    const rawParams: Record<string, string | undefined> = {};
+    for (const [key, value] of searchParams.entries()) {
+      rawParams[key] = value || undefined;
+    }
+    
+    // Handle empty strings for optional fields (treat as undefined)
+    const cleanedParams = {
+      projectId: rawParams.projectId || undefined,
+      dateFrom: rawParams.dateFrom && rawParams.dateFrom.trim() !== '' ? rawParams.dateFrom : undefined,
+      dateTo: rawParams.dateTo && rawParams.dateTo.trim() !== '' ? rawParams.dateTo : undefined,
+      status: rawParams.status || undefined,
+      includeCompanyLevel: rawParams.includeCompanyLevel,
+      page: rawParams.page || '1',
+      pageSize: rawParams.pageSize || '25',
+    };
+
+    // Use safeParse to catch validation errors
+    const parsed = DebitListFiltersSchema.safeParse(cleanedParams);
+    
+    if (!parsed.success) {
+      console.error('DEBIT API: Invalid query params', {
+        raw: cleanedParams,
+        issues: parsed.error.issues,
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Invalid query params',
+          raw: cleanedParams,
+          issues: parsed.error.issues,
+        },
+        { status: 400 }
+      );
+    }
+
+    const filters = parsed.data;
 
     const page = Number(filters.page) || 1;
     const pageSize = Number(filters.pageSize) || 25;
@@ -52,17 +90,11 @@ export async function GET(request: NextRequest) {
       debit: { gt: 0 },
     };
 
-    if (filters.projectId) {
-      where.projectId = filters.projectId;
-    } else if (filters.includeCompanyLevel === false) {
-      where.projectId = { not: null };
-    }
-
+    // Build voucher filters (status and date)
+    const voucherFilters: any = {};
     if (filters.status !== 'ALL') {
-      where.voucher = where.voucher || {};
-      where.voucher.status = filters.status;
+      voucherFilters.status = filters.status;
     }
-
     const voucherDateFilter: any = {};
     if (filters.dateFrom) {
       voucherDateFilter.gte = filters.dateFrom;
@@ -71,8 +103,55 @@ export async function GET(request: NextRequest) {
       voucherDateFilter.lte = filters.dateTo;
     }
     if (Object.keys(voucherDateFilter).length > 0) {
-      where.voucher = where.voucher || {};
-      Object.assign(where.voucher, { date: voucherDateFilter });
+      voucherFilters.date = voucherDateFilter;
+    }
+
+    // Build project filter and combine with voucher filters
+    if (filters.projectId) {
+      // When filtering by project: match if voucherLine.projectId OR voucher.projectId matches
+      // This handles cases where voucherLine.projectId is null but voucher.projectId is set
+      if (Object.keys(voucherFilters).length > 0) {
+        where.AND = [
+          {
+            OR: [
+              { projectId: filters.projectId },
+              { voucher: { projectId: filters.projectId } },
+            ],
+          },
+          {
+            voucher: voucherFilters,
+          },
+        ];
+      } else {
+        where.OR = [
+          { projectId: filters.projectId },
+          { voucher: { projectId: filters.projectId } },
+        ];
+      }
+    } else if (filters.includeCompanyLevel === false) {
+      // Exclude company-level rows: exclude where BOTH voucherLine.projectId AND voucher.projectId are null
+      // Include rows where voucherLine.projectId IS NOT NULL OR voucher.projectId IS NOT NULL
+      if (Object.keys(voucherFilters).length > 0) {
+        where.AND = [
+          {
+            OR: [
+              { projectId: { not: null } },
+              { voucher: { projectId: { not: null } } },
+            ],
+          },
+          {
+            voucher: voucherFilters,
+          },
+        ];
+      } else {
+        where.OR = [
+          { projectId: { not: null } },
+          { voucher: { projectId: { not: null } } },
+        ];
+      }
+    } else if (Object.keys(voucherFilters).length > 0) {
+      // No project filter, but have voucher filters
+      where.voucher = voucherFilters;
     }
 
     const skip = (page - 1) * pageSize;
@@ -130,11 +209,21 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    // Log error for debugging
+    console.error('DEBIT API ERROR', {
+      error,
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : undefined,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    // Handle specific error types
     if (error instanceof ZodError) {
       return NextResponse.json(
         {
           ok: false,
-          error: error.errors[0]?.message || 'Validation error',
+          error: 'Validation error',
+          issues: error.errors,
         },
         { status: 400 }
       );
@@ -145,6 +234,18 @@ export async function GET(request: NextRequest) {
     if (error instanceof ForbiddenError) {
       return createErrorResponse(error, 403);
     }
-    return createErrorResponse(error instanceof Error ? error : new Error('Unknown error'), 500);
+
+    // Unexpected errors return 500 with details
+    const isDev = process.env.NODE_ENV === 'development';
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'Debit API failed',
+        message: error instanceof Error ? error.message : String(error),
+        name: error instanceof Error ? error.name : undefined,
+        stack: isDev && error instanceof Error ? error.stack : undefined,
+      },
+      { status: 500 }
+    );
   }
 }

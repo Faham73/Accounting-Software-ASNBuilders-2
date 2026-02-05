@@ -12,7 +12,8 @@
     "db:seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
     "reset:stock": "dotenv -e ../../.env -- tsx scripts/resetStockData.ts",
     "migrate:credits": "dotenv -e ../../.env -- tsx scripts/migrateCreditsToPdfFields.ts",
-    "release:lock": "dotenv -e ../../.env -- tsx scripts/releaseAdvisoryLock.ts"
+    "release:lock": "dotenv -e ../../.env -- tsx scripts/releaseAdvisoryLock.ts",
+    "backfill:voucher-line-project-id": "dotenv -e ../../.env -- tsx scripts/backfillVoucherLineProjectId.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -31,6 +31,11 @@ export const ProjectCreateSchema = z.object({
   reference: z.string().optional().nullable(),
   isMain: z.boolean().optional().default(false),
   parentProjectId: z.string().optional().nullable(),
+  budgetTotal: z
+    .number()
+    .nonnegative('Budget must be non-negative')
+    .optional()
+    .nullable(),
 });
 
 /**
@@ -59,6 +64,11 @@ export const ProjectUpdateSchema = z.object({
   reference: z.string().optional().nullable(),
   isMain: z.boolean().optional(),
   parentProjectId: z.string().optional().nullable(),
+  budgetTotal: z
+    .number()
+    .nonnegative('Budget must be non-negative')
+    .optional()
+    .nullable(),
 });
 
 // Inferred TypeScript types

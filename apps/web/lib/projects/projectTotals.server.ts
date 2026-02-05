@@ -135,10 +135,14 @@ export async function getProjectTotals(
 
       // Debit total (from voucher lines with this project) - PROJECT SCOPED
       // Dashboard: only POSTED vouchers; optional ALL for other views
+      // Match if voucherLine.projectId OR voucher.projectId matches (handles null voucherLine.projectId)
       prisma.voucherLine.aggregate({
         where: {
-          projectId,
           companyId,
+          OR: [
+            { projectId },
+            { voucher: { projectId } },
+          ],
           ...(debitVoucherStatus === 'POSTED' && {
             voucher: { status: 'POSTED' },
           }),
@@ -234,13 +238,55 @@ export async function getCompanyTotals(
     companyId,
     debit: { gt: 0 },
   };
+  
+  // Build project filter and voucher status filter together
   if (projectId) {
-    debitWhere.projectId = projectId;
-  } else if (!includeCompanyLevel) {
-    debitWhere.projectId = { not: null };
-  }
-  if (voucherStatusFilter !== 'ALL') {
-    debitWhere.voucher = { status: voucherStatusFilter };
+    // When filtering by project: match if voucherLine.projectId OR voucher.projectId matches
+    // This handles cases where voucherLine.projectId is null but voucher.projectId is set
+    // Also apply voucher status filter if needed
+    if (voucherStatusFilter !== 'ALL') {
+      debitWhere.AND = [
+        {
+          OR: [
+            { projectId },
+            { voucher: { projectId } },
+          ],
+        },
+        {
+          voucher: { status: voucherStatusFilter },
+        },
+      ];
+    } else {
+      debitWhere.OR = [
+        { projectId },
+        { voucher: { projectId } },
+      ];
+    }
+  } else {
+    if (!includeCompanyLevel) {
+      // Exclude company-level rows: exclude where BOTH voucherLine.projectId AND voucher.projectId are null
+      // Include rows where voucherLine.projectId IS NOT NULL OR voucher.projectId IS NOT NULL
+      if (voucherStatusFilter !== 'ALL') {
+        debitWhere.AND = [
+          {
+            OR: [
+              { projectId: { not: null } },
+              { voucher: { projectId: { not: null } } },
+            ],
+          },
+          {
+            voucher: { status: voucherStatusFilter },
+          },
+        ];
+      } else {
+        debitWhere.OR = [
+          { projectId: { not: null } },
+          { voucher: { projectId: { not: null } } },
+        ];
+      }
+    } else if (voucherStatusFilter !== 'ALL') {
+      debitWhere.voucher = { status: voucherStatusFilter };
+    }
   }
 
   const [

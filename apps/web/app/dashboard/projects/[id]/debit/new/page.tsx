@@ -7,8 +7,10 @@ import CreateDebitVoucherForm from './CreateDebitVoucherForm';
 
 export default async function ProjectDebitNewPage({
   params,
+  searchParams,
 }: {
   params: { id: string };
+  searchParams: { returnTo?: string };
 }) {
   let auth;
   try {
@@ -44,7 +46,11 @@ export default async function ProjectDebitNewPage({
         </Link>
       }
     >
-      <CreateDebitVoucherForm projectId={params.id} projectName={project.name} />
+      <CreateDebitVoucherForm
+        projectId={params.id}
+        projectName={project.name}
+        returnTo={searchParams.returnTo}
+      />
     </DashboardLayout>
   );
 }

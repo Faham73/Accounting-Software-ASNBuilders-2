@@ -10,6 +10,12 @@ import { ProjectInvestmentCreateSchema, ProjectInvestmentListFiltersSchema } fro
 import { ZodError } from 'zod';
 import { createAuditLog } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
+import { generateVoucherNumber } from '@/lib/voucher';
+import {
+  getDefaultCashAccount,
+  getDefaultBankAccount,
+  getOwnerCapitalAccount,
+} from '@/lib/accounting/defaultAccounts.server';
 
 /**
  * GET /api/projects/[id]/investments
@@ -27,6 +33,7 @@ export async function GET(
       projectId: params.id,
       dateFrom: searchParams.get('dateFrom') || undefined,
       dateTo: searchParams.get('dateTo') || undefined,
+      paymentMethod: searchParams.get('paymentMethod') || undefined,
       page: searchParams.get('page') || '1',
       pageSize: searchParams.get('pageSize') || '25',
     });
@@ -56,6 +63,10 @@ export async function GET(
       companyId: auth.companyId,
       projectId: params.id,
     };
+
+    if (filters.paymentMethod) {
+      where.paymentMethod = filters.paymentMethod;
+    }
 
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
@@ -163,39 +174,111 @@ export async function POST(
       );
     }
 
-    const investment = await prisma.projectInvestment.create({
-      data: {
-        companyId: auth.companyId,
-        projectId: params.id,
-        date: validatedData.date,
-        amount: new Prisma.Decimal(validatedData.amount),
-        note: validatedData.note || null,
-        createdByUserId: auth.userId,
-      },
-      include: {
-        project: {
-          select: { id: true, name: true },
+    // Get default accounts based on payment method
+    const [cashAccountId, bankAccountId, ownerCapitalAccountId] = await Promise.all([
+      getDefaultCashAccount(auth.companyId).catch(() => null),
+      getDefaultBankAccount(auth.companyId).catch(() => null),
+      getOwnerCapitalAccount(auth.companyId).catch(() => null),
+    ]);
+
+    if (!cashAccountId || !bankAccountId || !ownerCapitalAccountId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Default accounts not configured. Please ensure Cash, Bank, and Owner Capital accounts exist.',
         },
-        createdBy: {
-          select: { id: true, name: true, email: true },
+        { status: 400 }
+      );
+    }
+
+    // Determine which account to debit based on payment method
+    const debitAccountId = validatedData.paymentMethod === 'CASH' ? cashAccountId : bankAccountId;
+
+    // Generate voucher number
+    const investmentDate = validatedData.date;
+    const voucherNo = await generateVoucherNumber(auth.companyId, investmentDate);
+
+    // Create investment + voucher + voucher lines in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Create voucher with POSTED status (RECEIPT type because money is received)
+      const voucher = await tx.voucher.create({
+        data: {
+          companyId: auth.companyId,
+          projectId: params.id,
+          voucherNo,
+          type: 'RECEIPT',
+          date: investmentDate,
+          status: 'POSTED',
+          narration: `Investment funding from ${validatedData.investorName} received by ${validatedData.receivedBy}`,
+          createdByUserId: auth.userId,
+          postedByUserId: auth.userId,
+          postedAt: new Date(),
+          lines: {
+            create: [
+              // Debit: Cash or Bank account (Asset)
+              {
+                companyId: auth.companyId,
+                accountId: debitAccountId,
+                description: `Investment received from ${validatedData.investorName}`,
+                debit: validatedData.amount,
+                credit: 0,
+                projectId: params.id,
+              },
+              // Credit: Owner Capital account (Equity)
+              {
+                companyId: auth.companyId,
+                accountId: ownerCapitalAccountId,
+                description: `Owner Capital - Investment from ${validatedData.investorName}`,
+                debit: 0,
+                credit: validatedData.amount,
+                projectId: params.id,
+              },
+            ],
+          },
         },
-      },
+      });
+
+      // Create investment linked to voucher
+      const investment = await tx.projectInvestment.create({
+        data: {
+          companyId: auth.companyId,
+          projectId: params.id,
+          date: investmentDate,
+          amount: new Prisma.Decimal(validatedData.amount),
+          note: validatedData.note || null,
+          investorName: validatedData.investorName,
+          receivedBy: validatedData.receivedBy,
+          paymentMethod: validatedData.paymentMethod,
+          voucherId: voucher.id,
+          createdByUserId: auth.userId,
+        },
+        include: {
+          project: {
+            select: { id: true, name: true },
+          },
+          createdBy: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      });
+
+      return investment;
     });
 
     await createAuditLog({
       companyId: auth.companyId,
       actorUserId: auth.userId,
       entityType: 'ProjectInvestment',
-      entityId: investment.id,
+      entityId: result.id,
       action: 'CREATE',
-      after: investment,
+      after: result,
       request,
     });
 
     return NextResponse.json(
       {
         ok: true,
-        data: investment,
+        data: result,
       },
       { status: 201 }
     );

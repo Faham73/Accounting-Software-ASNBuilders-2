@@ -20,11 +20,13 @@ interface PaymentMethod {
 interface CreateDebitVoucherFormProps {
   projectId: string;
   projectName: string;
+  returnTo?: string;
 }
 
 export default function CreateDebitVoucherForm({
   projectId,
   projectName,
+  returnTo,
 }: CreateDebitVoucherFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -139,7 +141,11 @@ export default function CreateDebitVoucherForm({
         return;
       }
 
-      router.push(`/dashboard/debit?projectId=${projectId}&created=1`);
+      // Redirect to returnTo if provided, otherwise default to project debit list
+      const redirectUrl = returnTo
+        ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}created=1`
+        : `/dashboard/debit?projectId=${projectId}&created=1`;
+      router.push(redirectUrl);
       router.refresh();
     } catch (err) {
       setError('An error occurred while creating the voucher');

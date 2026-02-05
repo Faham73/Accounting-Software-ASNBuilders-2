@@ -210,7 +210,7 @@ model Project {
   parentProjectId String?       @map("parent_project_id")
   totalFloors     Int?          @map("total_floors")
   totalUnits      Int?          @map("total_units")
-  budgetTotal     Decimal       @default(0) @map("budget_total") @db.Decimal(15, 2)
+  budgetTotal     Decimal?      @map("budget_total") @db.Decimal(15, 2)
   progressPercent Int          @default(0) @map("progress_percent")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
@@ -368,6 +368,7 @@ model Voucher {
   reversalVouchers Voucher[]         @relation("VoucherReversal")
   purchase        Purchase?          @relation("PurchaseVoucher")
   expense         Expense?           @relation("ExpenseVoucher")
+  investment      ProjectInvestment? @relation("InvestmentVoucher")
   lines           VoucherLine[]
   allocations     VendorAllocation[] @relation("PaymentVoucher")
 
@@ -790,6 +791,13 @@ model ProjectInvestment {
   date      DateTime
   amount    Decimal  @db.Decimal(18, 2)
   note      String?
+
+  // NEW (Funding fields)
+  investorName String? @map("investor_name")
+  receivedBy   String? @map("received_by")
+  paymentMethod PaymentMethodType? @map("payment_method")
+  voucherId    String? @unique @map("voucher_id")
+
   createdByUserId String @map("created_by_user_id")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -797,11 +805,13 @@ model ProjectInvestment {
   company   Company @relation(fields: [companyId], references: [id])
   project   Project @relation(fields: [projectId], references: [id])
   createdBy User    @relation("ProjectInvestmentCreator", fields: [createdByUserId], references: [id])
+  voucher   Voucher? @relation("InvestmentVoucher", fields: [voucherId], references: [id])
 
   @@index([companyId])
   @@index([companyId, projectId])
   @@index([companyId, projectId, date])
   @@index([projectId])
+  @@index([voucherId])
   @@map("project_investments")
 }
 

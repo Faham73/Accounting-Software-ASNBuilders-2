@@ -19,6 +19,7 @@ export interface Project {
   isMain?: boolean;
   parentProjectId?: string | null;
   parentProject?: { id: string; name: string } | null;
+  budgetTotal?: number | null;
   // Computed fields
   entriesCount?: number;
   filesCount?: number;

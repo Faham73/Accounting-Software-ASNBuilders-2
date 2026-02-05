@@ -243,27 +243,35 @@ export async function PATCH(
 
         // Create new lines
         const expenseType = validatedData.expenseType ?? updatedVoucher.expenseType;
+        const voucherProjectId = expenseType === 'OFFICE_EXPENSE' ? null : (updatedVoucher.projectId || null);
+        
         await tx.voucherLine.createMany({
-          data: validatedData.lines.map((line) => ({
-            voucherId: params.id,
-            companyId: auth.companyId,
-            accountId: line.accountId,
-            description: line.description || null,
-            debit: line.debit,
-            credit: line.credit,
-            projectId: expenseType === 'OFFICE_EXPENSE' 
+          data: validatedData.lines.map((line) => {
+            // Determine projectId: use line.projectId if set, otherwise fall back to voucher.projectId
+            // Exception: if isCompanyLevel is true or expenseType is OFFICE_EXPENSE, projectId should be null
+            const lineProjectId = expenseType === 'OFFICE_EXPENSE' 
               ? null 
-              : (line.isCompanyLevel ? null : (line.projectId || null)),
-            isCompanyLevel: expenseType === 'OFFICE_EXPENSE' ? false : (line.isCompanyLevel || false),
-            vendorId: line.vendorId || null,
-            paymentMethodId: line.paymentMethodId || null,
-            // PDF fields
-            workDetails: line.workDetails || null,
-            paidBy: line.paidBy || null,
-            receivedBy: line.receivedBy || null,
-            fileRef: line.fileRef || null,
-            voucherRef: line.voucherRef || null,
-          })),
+              : (line.isCompanyLevel ? null : (line.projectId || voucherProjectId));
+            
+            return {
+              voucherId: params.id,
+              companyId: auth.companyId,
+              accountId: line.accountId,
+              description: line.description || null,
+              debit: line.debit,
+              credit: line.credit,
+              projectId: lineProjectId,
+              isCompanyLevel: expenseType === 'OFFICE_EXPENSE' ? false : (line.isCompanyLevel || false),
+              vendorId: line.vendorId || null,
+              paymentMethodId: line.paymentMethodId || null,
+              // PDF fields
+              workDetails: line.workDetails || null,
+              paidBy: line.paidBy || null,
+              receivedBy: line.receivedBy || null,
+              fileRef: line.fileRef || null,
+              voucherRef: line.voucherRef || null,
+            };
+          }),
         });
       }
 

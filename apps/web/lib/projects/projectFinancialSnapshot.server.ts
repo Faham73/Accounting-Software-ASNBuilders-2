@@ -9,9 +9,9 @@ export interface ProjectFinancialSnapshotBreakdown {
 }
 
 export interface ProjectFinancialSnapshot {
-  budgetTotal: number;
+  budgetTotal: number | null;
   spent: number;
-  remaining: number;
+  remaining: number | null;
   overBudget: boolean;
   /** Manual progress 0–100 */
   progressPercent: number;
@@ -54,7 +54,7 @@ export async function getProjectFinancialSnapshot(
     throw new Error('Project not found or does not belong to company');
   }
 
-  const budgetTotal = project.budgetTotal?.toNumber() ?? 0;
+  const budgetTotal = project.budgetTotal ? project.budgetTotal.toNumber() : null;
   const progressPercent = project.progressPercent ?? 0;
 
   const purchaseWhere: {
@@ -118,10 +118,10 @@ export async function getProjectFinancialSnapshot(
   const laborCost = laborAgg._sum.amount?.toNumber() ?? 0;
 
   const spent = materialsCost + laborCost + otherExpenses;
-  const remaining = budgetTotal - spent;
-  const overBudget = spent > budgetTotal;
+  const remaining = budgetTotal !== null ? budgetTotal - spent : null;
+  const overBudget = budgetTotal !== null ? spent > budgetTotal : false;
   const costUsedPercent =
-    budgetTotal > 0 ? (spent / budgetTotal) * 100 : 0;
+    budgetTotal !== null && budgetTotal > 0 ? (spent / budgetTotal) * 100 : 0;
 
   return {
     budgetTotal,
